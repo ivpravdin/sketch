@@ -1,0 +1,13 @@
+[package]
+name = "sketch"
+version = "0.1.0"
+edition = "2021"
+description = "Ephemeral disposable machine sessions using temporary filesystem overlays"
+
+[dependencies]
+nix = { version = "0.29", features = ["mount", "sched", "signal", "process", "user", "fs"] }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
