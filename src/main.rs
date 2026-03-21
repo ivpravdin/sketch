@@ -1,5 +1,4 @@
 mod cli;
-mod commit;
 mod fs_utils;
 mod metadata;
 mod overlay;
@@ -182,7 +181,8 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
 
     // Write commit list inside the session (in overlay, not in /tmp/sketch-xxx)
     // This goes into the overlay upper directory where parent can access it
-    let commit_list_path = "/.sketch-commit";
+    // Use /var for metadata since it's a standard location for such files
+    let commit_list_path = "/var/.sketch-commit";
 
     // Append files to the commit list
     use std::io::Write;

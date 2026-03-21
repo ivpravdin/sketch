@@ -274,20 +274,20 @@ You can see which files have been marked for commit:
 
 ```bash
 # Inside session, view the commit list
-(sketch) $ cat /.sketch-commit
+(sketch) $ cat /var/.sketch-commit
 /etc/myconfig.conf
 /home/user/.bashrc
 
-# The .sketch-commit file is created inside the session (at /.sketch-commit)
+# The .sketch-commit file is created inside the session (at /var/.sketch-commit)
 # When written, it goes into the overlay upper directory
 ```
 
 ### Important: .sketch-commit Location & Architecture
 
 **Inside session:**
-- Files are written to `/.sketch-commit` (at root of merged filesystem)
-- This is writable because `/` is overlaid
-- Content goes to: `/tmp/sketch-<uuid>/upper/.sketch-commit` on host
+- Files are written to `/var/.sketch-commit` (standard location for metadata)
+- This is writable because `/var` is overlaid
+- Content goes to: `/tmp/sketch-<uuid>/upper/var/.sketch-commit` on host
 
 **Session Directory Structure:**
 ```
