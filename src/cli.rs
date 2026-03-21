@@ -54,6 +54,8 @@ pub fn parse_args() -> Config {
                 return Config {
                     command: Command::Clean,
                     verbose,
+                    force: false,
+                    preserve_home: false,
                 };
             }
             "--" => {
@@ -91,7 +93,12 @@ pub fn parse_args() -> Config {
         }
     };
 
-    Config { command, verbose }
+    Config {
+        command,
+        verbose,
+        force: false,
+        preserve_home: false,
+    }
 }
 
 fn parse_run_command(args: &[String]) -> Command {

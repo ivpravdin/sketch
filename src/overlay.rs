@@ -10,6 +10,7 @@ pub struct OverlaySession {
     pub work_dir: PathBuf,
     pub merged_dir: PathBuf,
     mounted: bool,
+    extra_mounts: Vec<PathBuf>,
 }
 
 impl OverlaySession {
@@ -31,6 +32,7 @@ impl OverlaySession {
             work_dir,
             merged_dir,
             mounted: false,
+            extra_mounts: Vec::new(),
         })
     }
 
@@ -219,6 +221,130 @@ impl OverlaySession {
         Ok(())
     }
 
+    pub fn mount_additional_filesystems(&mut self, verbose: bool) -> Result<(), String> {
+        // Filesystems to skip: virtual/pseudo filesystems
+        let skip_fstypes = [
+            "proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup", "cgroup2",
+            "pstore", "efivarfs", "bpf", "autofs", "hugetlbfs", "mqueue", "fusectl",
+            "configfs", "debugfs", "tracefs", "securityfs", "overlay", "nsfs", "ramfs",
+            "squashfs",
+        ];
+
+        // Mount prefixes to skip
+        let skip_prefixes = ["/proc", "/sys", "/dev", "/run", "/tmp"];
+
+        // Read /proc/self/mounts
+        let mounts_content = fs::read_to_string("/proc/self/mounts")
+            .map_err(|e| format!("Failed to read /proc/self/mounts: {}", e))?;
+
+        for line in mounts_content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue; // Malformed line, skip
+            }
+
+            let mountpoint = parts[1];
+            let fstype = parts[2];
+
+            // Skip virtual/pseudo filesystems
+            if skip_fstypes.contains(&fstype) {
+                continue;
+            }
+
+            // Skip special mount prefixes
+            if skip_prefixes.iter().any(|p| mountpoint.starts_with(p)) {
+                continue;
+            }
+
+            // Skip if it's the session dir itself (avoid recursion)
+            if mountpoint.starts_with(self.session_dir.to_string_lossy().as_ref()) {
+                continue;
+            }
+
+            // Skip the root filesystem (already lowerdir)
+            if mountpoint == "/" {
+                continue;
+            }
+
+            // Create overlay upper and work directories for this mount
+            let mount_name = mountpoint.trim_start_matches('/').replace('/', "_");
+            let mount_upper = self.upper_dir.join(&mount_name);
+            let mount_work = self.work_dir.join(&mount_name);
+
+            if let Err(e) = fs::create_dir_all(&mount_upper) {
+                if verbose {
+                    eprintln!(
+                        "sketch: warning: failed to create upper dir for {}: {}",
+                        mountpoint, e
+                    );
+                }
+                continue;
+            }
+
+            if let Err(e) = fs::create_dir_all(&mount_work) {
+                if verbose {
+                    eprintln!(
+                        "sketch: warning: failed to create work dir for {}: {}",
+                        mountpoint, e
+                    );
+                }
+                continue;
+            }
+
+            // Create target directory in merged_dir
+            let target = self
+                .merged_dir
+                .join(mountpoint.trim_start_matches('/'));
+
+            // Create the target directory if it doesn't exist
+            if let Err(e) = fs::create_dir_all(&target) {
+                if verbose {
+                    eprintln!(
+                        "sketch: warning: failed to create directory for mount {}: {}",
+                        mountpoint, e
+                    );
+                }
+                continue;
+            }
+
+            // Mount overlay for this filesystem
+            let overlay_opts = format!(
+                "lowerdir={},upperdir={},workdir={}",
+                mountpoint,
+                mount_upper.display(),
+                mount_work.display()
+            );
+
+            match mount(
+                Some("overlay"),
+                &target,
+                Some("overlay"),
+                MsFlags::empty(),
+                Some(overlay_opts.as_str()),
+            ) {
+                Ok(_) => {
+                    if verbose {
+                        eprintln!("sketch: mounted overlay for {} at {}", mountpoint, target.display());
+                    }
+                    self.extra_mounts.push(target);
+                }
+                Err(e) => {
+                    if verbose {
+                        eprintln!(
+                            "sketch: warning: failed to mount overlay for {} at {}: {}",
+                            mountpoint,
+                            target.display(),
+                            e
+                        );
+                    }
+                    // Don't abort; skip this mount and continue with others
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn pivot_root(&self) -> Result<(), String> {
         let old_root = self.merged_dir.join("mnt");
         fs::create_dir_all(&old_root)
@@ -239,7 +365,12 @@ impl OverlaySession {
 
     pub fn cleanup(&mut self) {
         if self.mounted {
-            // Unmount virtual filesystems first (best effort)
+            // Unmount extra mounts first (best effort)
+            for path in self.extra_mounts.drain(..) {
+                let _ = umount2(&path, MntFlags::MNT_DETACH);
+            }
+
+            // Unmount virtual filesystems (best effort)
             for path in &["run", "dev/shm", "dev/pts", "dev", "sys", "proc"] {
                 let target = self.merged_dir.join(path);
                 let _ = umount2(&target, MntFlags::MNT_DETACH);
