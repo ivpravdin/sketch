@@ -65,7 +65,6 @@ sketch --clean
 ## Documentation
 
 - **[User Guide](USER_GUIDE.md)** — How to use Sketch
-- **[Commit Guide](COMMIT_GUIDE.md)** — How to selectively persist files
 - **[Architecture](ARCHITECTURE.md)** — How it works internally
 - **[Contributing](CONTRIBUTING.md)** — Development guide
 - **[Testing Guide](TESTING.md)** — Running tests (root and non-root)
@@ -102,8 +101,6 @@ sketch commit /etc/config.conf                    # Single file
 sketch commit file1 file2 file3                  # Multiple files
 sketch commit /etc/nginx/*.conf                  # Glob patterns
 ```
-
-For detailed guide, see **[COMMIT_GUIDE.md](COMMIT_GUIDE.md)**.
 
 ## Use Cases
 

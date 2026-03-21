@@ -399,8 +399,12 @@ impl OverlaySession {
             self.mounted = false;
         }
 
-        // Remove temp directories
-        let _ = fs::remove_dir_all(&self.session_dir);
+        // Remove temp directories - retry if it fails the first time
+        // Some systems may need a brief delay after unmounting before removal succeeds
+        if fs::remove_dir_all(&self.session_dir).is_err() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = fs::remove_dir_all(&self.session_dir);
+        }
     }
 }
 
@@ -454,7 +458,11 @@ mod tests {
 }
 
 /// Clean up orphaned sketch overlay mounts and temp directories
+/// Only removes sessions if the process is no longer alive
 pub fn clean_orphaned() -> io::Result<u32> {
+    use std::thread;
+    use std::time::Duration;
+
     let mut cleaned = 0;
     let tmp = Path::new("/tmp");
 
@@ -464,14 +472,37 @@ pub fn clean_orphaned() -> io::Result<u32> {
             let name_str = name.to_string_lossy();
             if name_str.starts_with("sketch-") {
                 let path = entry.path();
-                let merged = path.join("merged");
 
-                // Try to unmount if still mounted
-                let _ = umount2(&merged, MntFlags::MNT_DETACH);
+                // Check if session is actually stale by reading metadata
+                let metadata_path = path.join(".sketch-metadata.json");
+                if let Ok(metadata) = fs::read_to_string(&metadata_path) {
+                    if let Ok(meta) = serde_json::from_str::<crate::metadata::SessionMetadata>(&metadata) {
+                        // Only clean up stale sessions (process no longer exists)
+                        if !meta.is_alive() {
+                            let merged = path.join("merged");
 
-                // Remove the directory tree
-                if fs::remove_dir_all(&path).is_ok() {
-                    cleaned += 1;
+                            // Aggressively unmount everything
+                            let _ = umount2(&merged, MntFlags::MNT_DETACH);
+
+                            // Try to remove the directory
+                            // Retry once after a brief delay if it fails
+                            if fs::remove_dir_all(&path).is_err() {
+                                thread::sleep(Duration::from_millis(50));
+                                if fs::remove_dir_all(&path).is_ok() {
+                                    cleaned += 1;
+                                }
+                            } else {
+                                cleaned += 1;
+                            }
+                        }
+                    }
+                } else {
+                    // If we can't read metadata, try to clean anyway
+                    let merged = path.join("merged");
+                    let _ = umount2(&merged, MntFlags::MNT_DETACH);
+                    if fs::remove_dir_all(&path).is_ok() {
+                        cleaned += 1;
+                    }
                 }
             }
         }

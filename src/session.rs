@@ -328,6 +328,8 @@ impl Session {
                 // Process committed files before cleanup
                 self.commit_marked_files();
                 self.overlay.cleanup();
+                // Clean up any stale orphaned sessions automatically
+                let _ = crate::overlay::clean_orphaned();
                 // Prevent double-cleanup in Drop
                 std::mem::forget(self);
                 Ok(exit_code)
