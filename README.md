@@ -65,8 +65,11 @@ sketch --clean
 ## Documentation
 
 - **[User Guide](USER_GUIDE.md)** — How to use Sketch
+- **[Commit Guide](COMMIT_GUIDE.md)** — How to selectively persist files
 - **[Architecture](ARCHITECTURE.md)** — How it works internally
 - **[Contributing](CONTRIBUTING.md)** — Development guide
+- **[Testing Guide](TESTING.md)** — Running tests (root and non-root)
+- **[CI/CD Workflows](.github/workflows/README.md)** — Automated testing setup
 
 ## How It Works
 
@@ -78,6 +81,29 @@ Sketch uses Linux **OverlayFS** and **namespaces** to create an isolated filesys
 4. **Cleanup** — All overlays unmounted when session ends
 
 For details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Commit Command Quick Reference
+
+The `sketch commit` command lets you **selectively persist files** while keeping everything else isolated:
+
+```bash
+sketch shell
+(sketch) $ # Make changes, install packages, edit configs
+(sketch) $ vim /etc/app.conf
+(sketch) $ npm install package  # Only in session
+(sketch) $ sketch commit /etc/app.conf  # Keep only this file
+(sketch) $ exit
+# Result: /etc/app.conf persisted, npm package not installed
+```
+
+**Common usage:**
+```bash
+sketch commit /etc/config.conf                    # Single file
+sketch commit file1 file2 file3                  # Multiple files
+sketch commit /etc/nginx/*.conf                  # Glob patterns
+```
+
+For detailed guide, see **[COMMIT_GUIDE.md](COMMIT_GUIDE.md)**.
 
 ## Use Cases
 
