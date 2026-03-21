@@ -1,5 +1,6 @@
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
+use sha2::{Sha256, Digest};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,8 +10,24 @@ pub struct OverlaySession {
     pub upper_dir: PathBuf,
     pub work_dir: PathBuf,
     pub merged_dir: PathBuf,
-    mounted: bool,
-    extra_mounts: Vec<PathBuf>,
+    pub mounted: bool,
+    pub extra_mounts: Vec<PathBuf>,
+}
+
+/// Generate a unique, collision-free name for a mount point's overlay directories.
+///
+/// Uses SHA256 hash of the mount path to ensure different mount points
+/// (e.g., /home/user and /home_user) don't collide.
+fn mount_name_from_path(mountpoint: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(mountpoint.as_bytes());
+    let hash = hasher.finalize();
+    // Use first 12 hex characters of hash (48 bits) for reasonable uniqueness
+    // and readability. Format each byte as 2-character hex.
+    hash[..6]
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
 }
 
 impl OverlaySession {
@@ -267,7 +284,8 @@ impl OverlaySession {
             }
 
             // Create overlay upper and work directories for this mount
-            let mount_name = mountpoint.trim_start_matches('/').replace('/', "_");
+            // Use hash-based naming to avoid collisions (e.g., /home/user vs /home_user)
+            let mount_name = mount_name_from_path(mountpoint);
             let mount_upper = self.upper_dir.join(&mount_name);
             let mount_work = self.work_dir.join(&mount_name);
 
@@ -389,6 +407,49 @@ impl OverlaySession {
 impl Drop for OverlaySession {
     fn drop(&mut self) {
         self.cleanup();
+    }
+}
+
+/// Tests for mount name generation
+#[cfg(test)]
+mod tests {
+    use super::mount_name_from_path;
+
+    #[test]
+    fn test_mount_name_is_deterministic() {
+        // Same path should always generate the same hash
+        let name1 = mount_name_from_path("/home/user");
+        let name2 = mount_name_from_path("/home/user");
+        assert_eq!(name1, name2, "hash should be deterministic");
+    }
+
+    #[test]
+    fn test_mount_name_avoids_collisions() {
+        // Paths that would collide with simple replace('/', "_") should differ
+        let name_home_user = mount_name_from_path("/home/user");
+        let name_home_user_flat = mount_name_from_path("/home_user");
+        assert_ne!(
+            name_home_user, name_home_user_flat,
+            "hash should distinguish between /home/user and /home_user"
+        );
+    }
+
+    #[test]
+    fn test_mount_name_is_reasonable_length() {
+        let name = mount_name_from_path("/home");
+        assert_eq!(name.len(), 12, "hash should be 12 hex characters (6 bytes)");
+    }
+
+    #[test]
+    fn test_mount_name_different_paths() {
+        let home = mount_name_from_path("/home");
+        let etc = mount_name_from_path("/etc");
+        let var = mount_name_from_path("/var");
+
+        // All different paths should have different hashes
+        assert_ne!(home, etc);
+        assert_ne!(etc, var);
+        assert_ne!(home, var);
     }
 }
 

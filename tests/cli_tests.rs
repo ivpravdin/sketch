@@ -156,11 +156,17 @@ fn no_args_non_root_behavior() {
     // invocation is allowed and will attempt to create a session.
     // On older systems, it will fail with a privilege error.
     if !output.status.success() {
+        // The code might fail for several reasons:
+        // 1. User namespaces not available -> privilege error
+        // 2. User namespaces available but unprivileged overlayfs disabled -> mount error
+        // 3. Unsupported kernel version -> user namespace error
         assert!(
             stderr.contains("must be run as root")
                 || stderr.contains("user namespace")
-                || stderr.contains("sudo"),
-            "non-root failure should mention root, user namespaces, or sudo, got: {}",
+                || stderr.contains("sudo")
+                || stderr.contains("mount")
+                || stderr.contains("EINVAL"),
+            "non-root failure should explain the reason, got: {}",
             stderr,
         );
     }

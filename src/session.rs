@@ -18,6 +18,59 @@ pub struct Session {
 }
 
 impl Session {
+    /// Attach to an existing session directory (for resuming disconnected sessions).
+    pub fn attach_existing(session_id: &str, verbose: bool) -> Result<Self, String> {
+        use std::path::PathBuf;
+
+        let session_dir = PathBuf::from(format!("/tmp/sketch-{}", session_id));
+
+        // Verify the session directory exists
+        if !session_dir.exists() {
+            return Err(format!("Session directory not found: {}", session_dir.display()));
+        }
+
+        // Load metadata to verify this is a valid sketch session
+        let _metadata = crate::metadata::SessionMetadata::load(&session_dir)?;
+
+        // Create an OverlaySession from the existing directory
+        // We need to construct the paths that would have been created
+        let upper_dir = session_dir.join("upper");
+        let work_dir = session_dir.join("work");
+        let merged_dir = session_dir.join("merged");
+
+        // Verify the overlay structure exists
+        if !upper_dir.exists() || !work_dir.exists() {
+            return Err(
+                format!("Invalid session directory structure (missing upper or work): {}", session_dir.display())
+            );
+        }
+
+        let overlay = crate::overlay::OverlaySession {
+            session_dir: session_dir.clone(),
+            upper_dir,
+            work_dir,
+            merged_dir,
+            mounted: false, // Will be mounted when needed
+            extra_mounts: Vec::new(),
+        };
+
+        let original_cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
+        let original_uid = nix::unistd::getuid().as_raw();
+        let original_gid = nix::unistd::getgid().as_raw();
+
+        if verbose {
+            eprintln!("sketch: attaching to session: {}", session_dir.display());
+        }
+
+        Ok(Self {
+            overlay,
+            original_cwd,
+            original_uid,
+            original_gid,
+            verbose,
+        })
+    }
+
     pub fn new(verbose: bool) -> Result<Self, String> {
         // Pre-check disk space before creating session directories
         use std::path::Path;
@@ -138,6 +191,59 @@ impl Session {
         Ok(())
     }
 
+    /// Process files marked for commitment from the overlay to the base filesystem.
+    fn commit_marked_files(&self) {
+        let commit_list_path = self.overlay.session_dir.join(".sketch-commit");
+
+        // Check if a commit list exists
+        if !commit_list_path.exists() {
+            return;
+        }
+
+        // Read the commit list
+        match std::fs::read_to_string(&commit_list_path) {
+            Ok(content) => {
+                let mut committed_count = 0;
+                for line in content.lines() {
+                    let file_path = line.trim();
+                    if file_path.is_empty() {
+                        continue;
+                    }
+
+                    // Get the corresponding file from the overlay upper directory
+                    let upper_rel_path = file_path.trim_start_matches('/');
+                    let upper_file = self.overlay.upper_dir.join(upper_rel_path);
+
+                    // Only commit if the file exists in the overlay
+                    if upper_file.exists() {
+                        match std::fs::copy(&upper_file, file_path) {
+                            Ok(_) => {
+                                if self.verbose {
+                                    eprintln!("sketch: committed {}", file_path);
+                                }
+                                committed_count += 1;
+                            }
+                            Err(e) => {
+                                if self.verbose {
+                                    eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if self.verbose && committed_count > 0 {
+                    eprintln!("sketch: committed {} file(s)", committed_count);
+                }
+            }
+            Err(e) => {
+                if self.verbose {
+                    eprintln!("sketch: warning: failed to read commit list: {}", e);
+                }
+            }
+        }
+    }
+
     /// Detect available package managers, log in verbose mode, and ensure
     /// their state directories exist in the overlay upper layer so writes
     /// (lock files, DB updates) don't fail.
@@ -176,6 +282,9 @@ impl Session {
                     std::env::set_var(key, val);
                 }
 
+                // Set the session directory for commit support
+                std::env::set_var("SKETCH_SESSION_DIR", &self.overlay.session_dir);
+
                 // Set package-manager-specific environment variables
                 if let Some(pm) = package::detect_package_manager() {
                     for (key, val) in pm.env_vars() {
@@ -211,6 +320,8 @@ impl Session {
             }
             Ok(ForkResult::Parent { child }) => {
                 let exit_code = wait_for_child(child, timeout);
+                // Process committed files before cleanup
+                self.commit_marked_files();
                 self.overlay.cleanup();
                 // Prevent double-cleanup in Drop
                 std::mem::forget(self);

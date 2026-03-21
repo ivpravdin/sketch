@@ -77,6 +77,32 @@ fn main() {
                 }
             }
         }
+        cli::Command::Commit(files) => {
+            match handle_commit(&files) {
+                Ok(()) => {},
+                Err(e) => {
+                    eprintln!("sketch: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+        cli::Command::Attach(session_id) => {
+            match session::Session::attach_existing(&session_id, config.verbose) {
+                Ok(session) => {
+                    match session.start_shell() {
+                        Ok(code) => process::exit(code),
+                        Err(e) => {
+                            eprintln!("sketch: {}", e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("sketch: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
         cli::Command::List(options) => {
             let sessions = metadata::list_sessions();
             if sessions.is_empty() {
@@ -141,6 +167,40 @@ fn main() {
             }
         }
     }
+}
+
+fn handle_commit(files: &[String]) -> Result<(), String> {
+    // Check if we're running inside a sketch session
+    if std::env::var("SKETCH_SESSION").is_err() {
+        return Err(
+            "'sketch commit' can only be run inside an active sketch session.\n\
+             Use it within a session to mark files for persistence."
+                .into(),
+        );
+    }
+
+    let session_dir = std::env::var("SKETCH_SESSION_DIR").map_err(|_| {
+        "SKETCH_SESSION_DIR environment variable not set".to_string()
+    })?;
+
+    use std::path::Path;
+    let commit_list_path = Path::new(&session_dir).join(".sketch-commit");
+
+    // Append files to the commit list
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&commit_list_path)
+        .map_err(|e| format!("Failed to open commit list: {}", e))?;
+
+    for file_path in files {
+        writeln!(file, "{}", file_path)
+            .map_err(|e| format!("Failed to write to commit list: {}", e))?;
+        println!("sketch: marked for commit: {}", file_path);
+    }
+
+    Ok(())
 }
 
 fn print_status() {

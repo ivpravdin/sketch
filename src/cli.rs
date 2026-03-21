@@ -8,6 +8,8 @@ pub enum Command {
     Shell,
     Exec(Vec<String>),
     Run(Vec<String>, RunOptions),
+    Commit(Vec<String>),
+    Attach(String),
     List(ListOptions),
     Status,
     Clean,
@@ -87,6 +89,22 @@ pub fn parse_args() -> Config {
                 Command::Exec(positional[1..].to_vec())
             }
             "run" => parse_run_command(&positional[1..]),
+            "commit" => {
+                if positional.len() < 2 {
+                    eprintln!("sketch: 'commit' requires at least one file path");
+                    eprintln!("Usage: sketch commit [FILE...]");
+                    process::exit(1);
+                }
+                Command::Commit(positional[1..].to_vec())
+            }
+            "attach" => {
+                if positional.len() < 2 {
+                    eprintln!("sketch: 'attach' requires a session ID");
+                    eprintln!("Usage: sketch attach <SESSION_ID>");
+                    process::exit(1);
+                }
+                Command::Attach(positional[1].clone())
+            }
             "list" | "ls" => parse_list_command(&positional[1..]),
             "status" => Command::Status,
             _ => Command::Exec(positional),
@@ -219,6 +237,8 @@ COMMANDS:
     shell                  Start interactive shell session (default)
     exec <command>         Execute a command in an ephemeral session
     run [OPTIONS] -- CMD   Run a command non-interactively (for scripting/CI)
+    commit [FILE...]       Persist files to base filesystem (inside session only)
+    attach <SESSION_ID>    Resume a disconnected session
     list [--json]          Show active sessions
     status                 Show system information and diagnostics
 
@@ -226,6 +246,16 @@ RUN OPTIONS:
     --name NAME            Label the session for identification
     --timeout SECONDS      Kill session after timeout
     -e, --env KEY=VALUE    Set environment variable (repeatable)
+
+COMMIT:
+    The 'commit' command works only inside an active sketch session.
+    It marks files to be persisted to the base filesystem when the session ends.
+    Example: sketch commit /etc/myconfig /home/user/.bashrc
+
+ATTACH:
+    Resume an existing session that is still in /tmp.
+    Useful when a session process has exited but the overlay files remain.
+    Example: sketch attach 590b91cc-694a-48e5-8cc9-a9be16803b9d
 
 If no command is given, an interactive shell session is started.
 
