@@ -1,4 +1,5 @@
 mod cli;
+mod commit;
 mod fs_utils;
 mod metadata;
 mod overlay;

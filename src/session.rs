@@ -282,8 +282,11 @@ impl Session {
                     std::env::set_var(key, val);
                 }
 
-                // Set the session directory for commit support
+                // Set session identifiers for child processes to detect they're in a session
+                std::env::set_var("SKETCH_SESSION", "1");
                 std::env::set_var("SKETCH_SESSION_DIR", &self.overlay.session_dir);
+                std::env::set_var("SKETCH_ORIGINAL_UID", self.original_uid.to_string());
+                std::env::set_var("SKETCH_ORIGINAL_GID", self.original_gid.to_string());
 
                 // Set package-manager-specific environment variables
                 if let Some(pm) = package::detect_package_manager() {
