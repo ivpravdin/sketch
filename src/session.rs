@@ -193,15 +193,17 @@ impl Session {
 
     /// Process files marked for commitment from the overlay to the base filesystem.
     fn commit_marked_files(&self) {
-        let commit_list_path = self.overlay.session_dir.join(".sketch-commit");
+        // The commit list is written inside the session (at /.sketch-commit)
+        // which goes into the overlay upper directory
+        let commit_list_in_upper = self.overlay.upper_dir.join(".sketch-commit");
 
         // Check if a commit list exists
-        if !commit_list_path.exists() {
+        if !commit_list_in_upper.exists() {
             return;
         }
 
-        // Read the commit list
-        match std::fs::read_to_string(&commit_list_path) {
+        // Read the commit list from the overlay upper directory
+        match std::fs::read_to_string(&commit_list_in_upper) {
             Ok(content) => {
                 let mut committed_count = 0;
                 for line in content.lines() {

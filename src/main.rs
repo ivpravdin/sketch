@@ -180,26 +180,9 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         );
     }
 
-    let session_dir = std::env::var("SKETCH_SESSION_DIR").map_err(|_| {
-        "SKETCH_SESSION_DIR environment variable not set".to_string()
-    })?;
-
-    use std::path::Path;
-    let session_path = Path::new(&session_dir);
-
-    // Verify session directory exists
-    if !session_path.exists() {
-        return Err(
-            format!(
-                "sketch: session directory not found: {}\n\
-                 This can happen if the session has exited or been cleaned up.\n\
-                 Start a new session with: sketch shell",
-                session_dir
-            )
-        );
-    }
-
-    let commit_list_path = session_path.join(".sketch-commit");
+    // Write commit list inside the session (in overlay, not in /tmp/sketch-xxx)
+    // This goes into the overlay upper directory where parent can access it
+    let commit_list_path = "/.sketch-commit";
 
     // Append files to the commit list
     use std::io::Write;
@@ -207,12 +190,7 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         .create(true)
         .append(true)
         .open(&commit_list_path)
-        .map_err(|e| format!(
-            "sketch: failed to open commit list: {}\n\
-             Session directory: {}\n\
-             Make sure you are inside an active sketch session",
-            e, session_dir
-        ))?;
+        .map_err(|e| format!("Failed to open commit list: {}", e))?;
 
     for file_path in files {
         writeln!(file, "{}", file_path)
