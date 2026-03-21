@@ -183,10 +183,9 @@ impl Session {
         }
         self.prepare_package_managers();
 
-        if self.verbose {
-            eprintln!("sketch: pivoting root...");
-        }
-        self.overlay.pivot_root()?;
+        // Note: pivot_root() is NOT called here anymore.
+        // It must be done in the child process after fork(),
+        // so the parent stays in the original root for proper cleanup.
 
         Ok(())
     }
@@ -278,6 +277,15 @@ impl Session {
         // Fork so we can wait for the child and then clean up
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
+                // Child process: pivot root, then execute command
+                if self.verbose {
+                    eprintln!("sketch: [child] pivoting root...");
+                }
+                if let Err(e) = self.overlay.pivot_root() {
+                    eprintln!("sketch: pivot_root failed: {}", e);
+                    process::exit(1);
+                }
+
                 // Set up session environment variables
                 let env_vars = fs_utils::setup_session_env(self.original_uid, self.original_gid);
                 for (key, val) in &env_vars {
@@ -324,8 +332,10 @@ impl Session {
                 process::exit(127);
             }
             Ok(ForkResult::Parent { child }) => {
+                // Parent stays in original root. Wait for child to complete.
                 let exit_code = wait_for_child(child, timeout);
-                // Process committed files before cleanup
+
+                // Now safe to access original filesystem for cleanup
                 self.commit_marked_files();
                 self.overlay.cleanup();
                 // Clean up any stale orphaned sessions automatically
