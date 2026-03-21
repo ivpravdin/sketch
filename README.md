@@ -39,7 +39,7 @@ sketch shell
 
 ```bash
 cargo build --release
-sudo mv target/release/sketch /usr/local/bin/
+sudo install target/release/sketch /usr/local/bin/
 ```
 
 ### Basic Usage

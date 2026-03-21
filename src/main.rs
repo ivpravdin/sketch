@@ -185,7 +185,21 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
     })?;
 
     use std::path::Path;
-    let commit_list_path = Path::new(&session_dir).join(".sketch-commit");
+    let session_path = Path::new(&session_dir);
+
+    // Verify session directory exists
+    if !session_path.exists() {
+        return Err(
+            format!(
+                "sketch: session directory not found: {}\n\
+                 This can happen if the session has exited or been cleaned up.\n\
+                 Start a new session with: sketch shell",
+                session_dir
+            )
+        );
+    }
+
+    let commit_list_path = session_path.join(".sketch-commit");
 
     // Append files to the commit list
     use std::io::Write;
@@ -193,7 +207,12 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         .create(true)
         .append(true)
         .open(&commit_list_path)
-        .map_err(|e| format!("Failed to open commit list: {}", e))?;
+        .map_err(|e| format!(
+            "sketch: failed to open commit list: {}\n\
+             Session directory: {}\n\
+             Make sure you are inside an active sketch session",
+            e, session_dir
+        ))?;
 
     for file_path in files {
         writeln!(file, "{}", file_path)
