@@ -28,7 +28,10 @@ sketch shell
 | Multiple files | `sketch commit file1 file2 file3` |
 | All in directory | `sketch commit /etc/app/*` |
 | With wildcards | `sketch commit /home/user/.config/*.conf` |
-| View commit list | `cat $SKETCH_SESSION_DIR/.sketch-commit` |
+| View commit list (inside) | `cat $SKETCH_SESSION_DIR/.sketch-commit` |
+| View commit list (outside) | `cat /tmp/sketch-<uuid>/.sketch-commit` |
+
+**Note:** `.sketch-commit` is in session directory, NOT in merged directory.
 
 ## Before You Commit
 

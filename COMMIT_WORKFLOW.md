@@ -309,17 +309,23 @@ SESSION LIFECYCLE
 
 [Created]
    │
-   │ Session starts with isolated overlay
+   │ Session created at /tmp/sketch-<uuid>/
+   │ ├─ merged/   (what user sees)
+   │ ├─ upper/    (writable layer)
+   │ ├─ work/     (overlay working dir)
+   │ └─ .sketch-commit (metadata - NOT in merged/)
    │
    ▼
 [Running]  ◄──────────────┐
    │                      │
    ├─ User makes changes  │
    │  └─ Everything in    │
-   │     overlay          │
+   │     overlay/merged   │
    │                      │
    ├─ User commits files  │
-   │  └─ Marked in list   │
+   │  └─ Marked in        │
+   │     .sketch-commit   │
+   │     (session root)   │
    │                      │
    └─ More changes OK   ──┘
 
@@ -329,16 +335,20 @@ SESSION LIFECYCLE
    ▼
 [Exiting]
    │
-   ├─ Read .sketch-commit
+   ├─ Read .sketch-commit from session root
    ├─ Copy marked files to host
    ├─ Unmount overlays
-   ├─ Clean temp directories
+   ├─ Clean /tmp/sketch-<uuid>/
    │
    ▼
 [Cleaned]
    │
-   └─ Session gone, changes persisted
+   └─ Session dir deleted, changes persisted
 ```
+
+**Important:** The `.sketch-commit` file is stored in `/tmp/sketch-<uuid>/`
+(the session root), NOT in `/tmp/sketch-<uuid>/merged/`.
+It's metadata about what to persist, not part of the overlay view.
 
 ## Key Takeaway
 

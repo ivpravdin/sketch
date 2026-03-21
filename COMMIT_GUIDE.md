@@ -278,10 +278,39 @@ You can see which files have been marked for commit:
 /etc/myconfig.conf
 /home/user/.bashrc
 
+# The .sketch-commit file is stored in the session directory, NOT in merged/
+# Location: /tmp/sketch-<uuid>/.sketch-commit (outside the overlay view)
+
 # Or check if a session dir exists (outside session)
 $ ls -la /tmp/sketch-*/
 $ cat /tmp/sketch-<uuid>/.sketch-commit
 ```
+
+### Important: .sketch-commit Location
+
+**Inside session:**
+- `.sketch-commit` is NOT visible as a regular file
+- It's stored in `$SKETCH_SESSION_DIR/` (the session root)
+- It's metadata about what to persist, not a file to persist itself
+
+**Session Directory Structure:**
+```
+/tmp/sketch-<uuid>/
+├── upper/              (overlay writable layer)
+├── work/               (overlay work directory)
+├── merged/             (what you see inside session)
+│   ├── etc/
+│   ├── home/
+│   └── ... (all filesystem mounts)
+│
+└── .sketch-commit      ← METADATA (not visible in session)
+    (list of files to persist)
+```
+
+**Accessing it:**
+- Inside session: `$SKETCH_SESSION_DIR/.sketch-commit`
+- Outside session: `/tmp/sketch-<uuid>/.sketch-commit`
+- Don't try to `cat /etc/.sketch-commit` - it won't exist there!
 
 ## Edge Cases & Gotchas
 
