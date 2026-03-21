@@ -68,22 +68,30 @@ Visual guides for understanding how the commit feature works.
 ## Commit List Processing
 
 ```
-Step 1: Create commit list during session
+Step 1: Inside session, create commit list
 ┌────────────────────────────────┐
-│ .sketch-commit file            │
-│ ────────────────────────────── │
+│ Child process writes           │
+│ to: /.sketch-commit            │
+│                                │
+│ Content:                       │
 │ /etc/config.conf               │
 │ /etc/newfile.conf              │
 │ /home/user/.bashrc             │
+│                                │
+│ Goes to overlay:               │
+│ /tmp/sketch-<uuid>/upper/      │
+│   └── .sketch-commit           │
 └────────────────────────────────┘
 
-Step 2: On exit, process each file
+Step 2: On exit, parent reads and processes
 ┌────────────────────────────────┐
-│ For each line in .sketch-commit │
-│ 1. Check if file exists in      │
-│    session's merged view        │
-│ 2. Copy from overlay upper dir  │
-│ 3. Write to host filesystem     │
+│ Parent reads:                  │
+│ overlay.upper_dir/.sketch-commit│
+│                                │
+│ For each line:                 │
+│ 1. Find in overlay upper       │
+│ 2. Copy to host filesystem     │
+│ 3. Mark as committed           │
 └────────────────────────────────┘
 
 Step 3: Result on host

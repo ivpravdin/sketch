@@ -274,43 +274,50 @@ You can see which files have been marked for commit:
 
 ```bash
 # Inside session, view the commit list
-(sketch) $ cat $SKETCH_SESSION_DIR/.sketch-commit
+(sketch) $ cat /.sketch-commit
 /etc/myconfig.conf
 /home/user/.bashrc
 
-# The .sketch-commit file is stored in the session directory, NOT in merged/
-# Location: /tmp/sketch-<uuid>/.sketch-commit (outside the overlay view)
-
-# Or check if a session dir exists (outside session)
-$ ls -la /tmp/sketch-*/
-$ cat /tmp/sketch-<uuid>/.sketch-commit
+# The .sketch-commit file is created inside the session (at /.sketch-commit)
+# When written, it goes into the overlay upper directory
 ```
 
-### Important: .sketch-commit Location
+### Important: .sketch-commit Location & Architecture
 
 **Inside session:**
-- `.sketch-commit` is NOT visible as a regular file
-- It's stored in `$SKETCH_SESSION_DIR/` (the session root)
-- It's metadata about what to persist, not a file to persist itself
+- Files are written to `/.sketch-commit` (at root of merged filesystem)
+- This is writable because `/` is overlaid
+- Content goes to: `/tmp/sketch-<uuid>/upper/.sketch-commit` on host
 
 **Session Directory Structure:**
 ```
+Host /tmp:
 /tmp/sketch-<uuid>/
 ├── upper/              (overlay writable layer)
+│   └── .sketch-commit  ← FILE WRITTEN BY CHILD PROCESS
 ├── work/               (overlay work directory)
-├── merged/             (what you see inside session)
-│   ├── etc/
-│   ├── home/
-│   └── ... (all filesystem mounts)
-│
-└── .sketch-commit      ← METADATA (not visible in session)
-    (list of files to persist)
+└── merged/             (overlaid view - what session sees)
+    ├── etc/
+    ├── home/
+    └── ... (all filesystem mounts, including /tmp)
 ```
 
-**Accessing it:**
-- Inside session: `$SKETCH_SESSION_DIR/.sketch-commit`
-- Outside session: `/tmp/sketch-<uuid>/.sketch-commit`
-- Don't try to `cat /etc/.sketch-commit` - it won't exist there!
+**Inside the session (child sees):**
+- `/.sketch-commit` appears to be at root
+- Can write to it because `/` is overlaid
+- Actual writes go to: `/tmp/sketch-<uuid>/upper/.sketch-commit`
+
+**After session exits (parent process):**
+- Reads from: `/tmp/sketch-<uuid>/upper/.sketch-commit`
+- Copies all marked files to host
+- Cleans up temp directory
+
+### Why This Design?
+
+- ✅ Child process can write inside the overlay (no /tmp mount issues)
+- ✅ Parent process can read what child wrote (from upper directory)
+- ✅ Works correctly with all overlay mounts
+- ✅ Avoids conflicts with overlaid /tmp
 
 ## Edge Cases & Gotchas
 
