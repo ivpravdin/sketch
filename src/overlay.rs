@@ -103,6 +103,31 @@ impl OverlaySession {
                     );
                 }
             }
+
+            // For user namespaces, ensure /dev has essential device files
+            // Create /dev/null, /dev/zero, /dev/urandom as they may not be available via bind mount
+            let dev_dir = self.merged_dir.join("dev");
+            let _ = fs::create_dir_all(&dev_dir);
+
+            // Create essential device files using mknod if they don't exist
+            let dev_files = [
+                ("null", 0o666, 1, 3),    // /dev/null
+                ("zero", 0o666, 1, 5),    // /dev/zero
+                ("urandom", 0o666, 1, 9), // /dev/urandom
+                ("tty", 0o666, 5, 0),     // /dev/tty
+            ];
+
+            for (name, mode, maj, min) in &dev_files {
+                let dev_path = dev_dir.join(name);
+                if !dev_path.exists() {
+                    let dev = ((*maj as u32) << 8) | (*min as u32);
+                    let _ = unsafe { libc::mknod(
+                        dev_path.to_string_lossy().as_ptr() as *const i8,
+                        mode | libc::S_IFCHR as u32,
+                        dev as libc::dev_t,
+                    )};
+                }
+            }
         }
 
         Ok(())
