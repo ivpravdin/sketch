@@ -1,3 +1,4 @@
+use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
@@ -164,9 +165,20 @@ impl Session {
         self.overlay.mount_overlay()?;
 
         if self.verbose {
+            eprintln!("sketch: finalizing root structure...");
+        }
+        self.overlay.finalize_root_structure()?;
+
+        if self.verbose {
             eprintln!("sketch: mounting virtual filesystems...");
         }
         self.overlay.mount_virtual_filesystems()?;
+
+        // Make mounts private AFTER all mounts are done (including virtual filesystems)
+        if self.verbose {
+            eprintln!("sketch: making mounts private...");
+        }
+        self.overlay.finalize_mounts()?;
 
         if self.verbose {
             eprintln!("sketch: mounting additional partitions...");
@@ -194,7 +206,7 @@ impl Session {
     fn commit_marked_files(&self) {
         // The commit list is written inside the session (at /.sketch-commit)
         // which goes into the overlay upper directory
-        let commit_list_in_upper = self.overlay.upper_dir.join(".sketch-commit");
+        let commit_list_in_upper = self.overlay.upper_dir.join("/var/.sketch-commit");
 
         // Check if a commit list exists
         if !commit_list_in_upper.exists() {
@@ -277,12 +289,47 @@ impl Session {
         // Fork so we can wait for the child and then clean up
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
-                // Child process: pivot root, then execute command
+                // Child process: create isolated mount namespace, then pivot root
                 if self.verbose {
-                    eprintln!("sketch: [child] pivoting root...");
+                    eprintln!("sketch: [child] creating isolated mount namespace...");
                 }
-                if let Err(e) = self.overlay.pivot_root() {
-                    eprintln!("sketch: pivot_root failed: {}", e);
+                if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
+                    eprintln!("sketch: [child] failed to create mount namespace: {}", e);
+                    process::exit(1);
+                }
+
+                // For user namespaces, pivot_root may fail if the merged root isn't a proper mount
+                // In that case, try to use chroot instead as a fallback
+                let in_user_namespace = std::env::var("SKETCH_USER_NAMESPACE").is_ok();
+
+                if self.verbose {
+                    eprintln!("sketch: [child] changing root...");
+                }
+
+                let pivot_result = if in_user_namespace {
+                    // In user namespaces, try chroot first (more reliable than pivot_root with bind mounts)
+                    use std::ffi::CString;
+                    let merged_cstr = CString::new(self.overlay.merged_dir.to_string_lossy().as_bytes()).unwrap();
+                    match unsafe { libc::chroot(merged_cstr.as_ptr()) } {
+                        0 => {
+                            // chroot succeeded, now change to root
+                            if nix::unistd::chdir("/").is_ok() {
+                                Ok(())
+                            } else {
+                                Err("Failed to chdir to /".to_string())
+                            }
+                        }
+                        _ => {
+                            // chroot failed, try pivot_root as fallback
+                            self.overlay.pivot_root()
+                        }
+                    }
+                } else {
+                    self.overlay.pivot_root()
+                };
+
+                if let Err(e) = pivot_result {
+                    eprintln!("sketch: failed to change root: {}", e);
                     process::exit(1);
                 }
 
@@ -338,8 +385,6 @@ impl Session {
                 // Now safe to access original filesystem for cleanup
                 self.commit_marked_files();
                 self.overlay.cleanup();
-                // Clean up any stale orphaned sessions automatically
-                let _ = crate::overlay::clean_orphaned();
                 // Prevent double-cleanup in Drop
                 std::mem::forget(self);
                 Ok(exit_code)

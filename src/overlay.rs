@@ -63,30 +63,54 @@ impl OverlaySession {
             .to_string()
     }
 
-    /// Set up namespaces for the session.
-    ///
-    /// If running as root, only a mount namespace is needed.
-    /// If running as non-root, a user namespace is created first to gain the
-    /// capabilities needed for OverlayFS mounting and pivot_root.
+    /// Set up mount namespace for the session.
+    /// If we're already in a mount namespace (via unshare --mount), skip creating another.
+    /// Otherwise creates a new mount namespace.
+    /// Mounts will be made private after the overlay is mounted (see finalize_mounts).
     pub fn setup_namespaces(&self) -> Result<(), String> {
-        let is_root = nix::unistd::geteuid().is_root();
-
-        if !is_root {
-            // Non-root: create user namespace first for privilege elevation
-            let real_uid = nix::unistd::getuid().as_raw();
-            let real_gid = nix::unistd::getgid().as_raw();
-            crate::userns::setup_user_namespace(real_uid, real_gid)
-                .map_err(|e| format!(
-                    "Failed to set up user namespace: {}. Try running with sudo.",
-                    e,
-                ))?;
+        // Check if we're already in a mount namespace created by unshare
+        if std::env::var("SKETCH_IN_UNSHARE").is_ok() {
+            // Already in a mount namespace from unshare, don't create another
+            return Ok(());
         }
 
-        // Create mount namespace (works after user namespace gives us CAP_SYS_ADMIN)
+        // Create mount namespace only if not already in one
         unshare(CloneFlags::CLONE_NEWNS)
             .map_err(|e| format!("Failed to create mount namespace: {}", e))?;
 
-        // Make all mounts private so our changes don't propagate to the host
+        Ok(())
+    }
+
+    /// Finalize root structure for user namespaces by bind-mounting essential system directories
+    pub fn finalize_root_structure(&self) -> Result<(), String> {
+        let in_user_namespace = std::env::var("SKETCH_USER_NAMESPACE").is_ok();
+
+        if in_user_namespace {
+            // Bind mount essential system directories from the host root to merged root
+            // This provides access to system files without trying to use "/" as lowerdir
+            for dir in &["bin", "sbin", "lib", "lib64", "etc", "usr", "var", "opt", "srv"] {
+                let host_path = format!("/{}", dir);
+                let target = self.merged_dir.join(dir);
+
+                // Only bind mount if the host directory exists
+                if Path::new(&host_path).exists() {
+                    let _ = mount(
+                        Some(host_path.as_str()),
+                        &target,
+                        None::<&str>,
+                        MsFlags::MS_BIND | MsFlags::MS_REC,
+                        None::<&str>,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Finalize mounts by making them private so our changes don't propagate to the host.
+    /// This should be called after the overlay is mounted.
+    pub fn finalize_mounts(&self) -> Result<(), String> {
         mount(
             None::<&str>,
             "/",
@@ -100,11 +124,33 @@ impl OverlaySession {
     }
 
     pub fn mount_overlay(&mut self) -> Result<(), String> {
-        let overlay_opts = format!(
+        let is_root = nix::unistd::geteuid().is_root();
+        let in_user_namespace = std::env::var("SKETCH_USER_NAMESPACE").is_ok();
+
+        // In user namespaces, "/" can't be used as lowerdir for overlayfs
+        // Skip the root overlay mount and rely on mount_additional_filesystems and
+        // bind mounts to create the necessary filesystem structure
+        if in_user_namespace {
+            // Create essential system directories in merged_dir that will be needed for pivot_root
+            // These will be bind-mounted from the host in finalize_root_structure()
+            for dir in &["bin", "sbin", "lib", "lib64", "etc", "usr", "var", "tmp"] {
+                let path = self.merged_dir.join(dir);
+                let _ = fs::create_dir_all(&path);
+            }
+            return Ok(());
+        }
+
+        let mut overlay_opts = format!(
             "lowerdir=/,upperdir={},workdir={}",
             self.upper_dir.display(),
             self.work_dir.display()
         );
+
+        // For unprivileged mounting, use userxattr to work with user.overlay.* xattr namespace
+        // instead of requiring trusted.overlay.* which needs CAP_SYS_ADMIN
+        if !is_root {
+            overlay_opts.push_str(",userxattr");
+        }
 
         mount(
             Some("overlay"),
@@ -278,16 +324,20 @@ impl OverlaySession {
                 continue;
             }
 
-            // Skip the root filesystem (already lowerdir)
+            // Skip the root filesystem
+            // - In non-user-namespace mode: already mounted as the main overlay
+            // - In user-namespace mode: can't be mounted as overlayfs, rely on other mounts
             if mountpoint == "/" {
                 continue;
             }
 
             // Create overlay upper and work directories for this mount
             // Use hash-based naming to avoid collisions (e.g., /home/user vs /home_user)
+            // Create these at the session_dir level, not inside the main work_dir
+            // (the main work_dir must stay empty for the root overlay mount)
             let mount_name = mount_name_from_path(mountpoint);
-            let mount_upper = self.upper_dir.join(&mount_name);
-            let mount_work = self.work_dir.join(&mount_name);
+            let mount_upper = self.session_dir.join(format!("upper-{}", mount_name));
+            let mount_work = self.session_dir.join(format!("work-{}", mount_name));
 
             if let Err(e) = fs::create_dir_all(&mount_upper) {
                 if verbose {
@@ -326,12 +376,19 @@ impl OverlaySession {
             }
 
             // Mount overlay for this filesystem
-            let overlay_opts = format!(
+            let is_root = nix::unistd::geteuid().is_root();
+            let in_user_namespace = std::env::var("SKETCH_USER_NAMESPACE").is_ok();
+            let mut overlay_opts = format!(
                 "lowerdir={},upperdir={},workdir={}",
                 mountpoint,
                 mount_upper.display(),
                 mount_work.display()
             );
+
+            // For unprivileged mounting, use userxattr
+            if !is_root || in_user_namespace {
+                overlay_opts.push_str(",userxattr");
+            }
 
             match mount(
                 Some("overlay"),

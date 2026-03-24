@@ -54,28 +54,29 @@ pub fn can_use_user_namespaces() -> bool {
     user_namespaces_available() && unprivileged_overlayfs_available()
 }
 
-/// Create a user namespace and set up UID/GID mappings.
-///
-/// Maps the current real UID/GID to 0:0 inside the namespace, giving us
-/// the capabilities needed for mount operations within the namespace.
-pub fn setup_user_namespace(real_uid: u32, real_gid: u32) -> Result<(), String> {
+/// Setup user namespace for non-root operation.
+/// CRITICAL: Must be called BEFORE unshare to capture current UID/GID.
+pub fn setup_user_namespace() -> Result<(), String> {
+    // Save UID/GID BEFORE unshare - after unshare they change
+    let real_uid = nix::unistd::getuid().as_raw();
+    let real_gid = nix::unistd::getgid().as_raw();
+
     // Create user namespace
     unshare(CloneFlags::CLONE_NEWUSER)
-        .map_err(|e| format!("Failed to create user namespace: {}", e))?;
+        .map_err(|e| format!("unshare(CLONE_NEWUSER) failed: {}", e))?;
 
-    // Must deny setgroups before writing gid_map (Linux 3.19+ security requirement)
-    write_proc_file("/proc/self/setgroups", "deny")
-        .map_err(|e| format!("Failed to write setgroups: {}", e))?;
+    // Disable setgroups (required before UID/GID mapping on newer kernels)
+    write_proc_file("/proc/self/setgroups", "deny")?;
 
-    // Map real UID -> 0 inside namespace
-    let uid_map = format!("0 {} 1", real_uid);
-    write_proc_file("/proc/self/uid_map", &uid_map)
-        .map_err(|e| format!("Failed to write uid_map: {}", e))?;
+    // Map container UID 0 to host UID
+    write_proc_file("/proc/self/uid_map", &format!("0 {} 1", real_uid))?;
 
-    // Map real GID -> 0 inside namespace
-    let gid_map = format!("0 {} 1", real_gid);
-    write_proc_file("/proc/self/gid_map", &gid_map)
-        .map_err(|e| format!("Failed to write gid_map: {}", e))?;
+    // Map container GID 0 to host GID
+    write_proc_file("/proc/self/gid_map", &format!("0 {} 1", real_gid))?;
+
+    // Create mount namespace for isolation (sessions will create additional ones)
+    unshare(CloneFlags::CLONE_NEWNS)
+        .map_err(|e| format!("unshare(CLONE_NEWNS) failed: {}", e))?;
 
     Ok(())
 }
