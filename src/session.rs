@@ -204,9 +204,9 @@ impl Session {
 
     /// Process files marked for commitment from the overlay to the base filesystem.
     fn commit_marked_files(&self) {
-        // The commit list is written inside the session (at /tmp/.sketch-commit)
+        // The commit list is written inside the session (at /var/.sketch-commit)
         // which goes into the overlay upper directory
-        let commit_list_in_upper = self.overlay.upper_dir.join("tmp/.sketch-commit");
+        let commit_list_in_upper = self.overlay.upper_dir.join("var/.sketch-commit");
 
         // Check if a commit list exists
         if !commit_list_in_upper.exists() {

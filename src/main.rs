@@ -231,10 +231,10 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         );
     }
 
-    // Write commit list inside the session
-    // Use /tmp/.sketch-commit which is writable and separate from bind-mounted directories
-    // Note: /var is bind-mounted from host, so /var/.sketch-commit would go to host's /var
-    let commit_list_path = "/tmp/.sketch-commit";
+    // Write commit list inside the session (in overlay, not in /tmp/sketch-xxx)
+    // This goes into the overlay upper directory where parent can access it
+    // Use /var for metadata since it's a standard location for such files
+    let commit_list_path = "/var/.sketch-commit";
 
     // Append files to the commit list
     use std::io::Write;
