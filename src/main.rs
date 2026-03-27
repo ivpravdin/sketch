@@ -231,13 +231,15 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         );
     }
 
-    // Write commit list inside the session (in overlay, not in /tmp/sketch-xxx)
-    // This goes into the overlay upper directory where parent can access it
-    // Use /var for metadata since it's a standard location for such files
-    let commit_list_path = "/var/.sketch-commit";
+    // Write commit list inside the session
+    // Use /tmp/.sketch-commit which is writable and separate from bind-mounted directories
+    // Note: /var is bind-mounted from host, so /var/.sketch-commit would go to host's /var
+    let commit_list_path = "/tmp/.sketch-commit";
 
     // Append files to the commit list
     use std::io::Write;
+    use std::path::PathBuf;
+
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -245,9 +247,28 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         .map_err(|e| format!("Failed to open commit list: {}", e))?;
 
     for file_path in files {
-        writeln!(file, "{}", file_path)
+        // Resolve relative paths to absolute paths
+        let abs_path = if PathBuf::from(file_path).is_absolute() {
+            PathBuf::from(file_path)
+        } else {
+            // Relative path: resolve against current directory
+            match std::env::current_dir() {
+                Ok(cwd) => cwd.join(file_path),
+                Err(e) => {
+                    return Err(format!("Failed to resolve path '{}': couldn't get current dir: {}", file_path, e));
+                }
+            }
+        };
+
+        // Check if the file exists in the overlayfs (in the current merged view)
+        if !abs_path.exists() {
+            return Err(format!("File does not exist in overlayfs: {}", abs_path.display()));
+        }
+
+        let abs_path_str = abs_path.to_string_lossy().to_string();
+        writeln!(file, "{}", abs_path_str)
             .map_err(|e| format!("Failed to write to commit list: {}", e))?;
-        println!("sketch: marked for commit: {}", file_path);
+        println!("sketch: marked for commit: {}", abs_path_str);
     }
 
     Ok(())

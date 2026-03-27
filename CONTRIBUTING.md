@@ -259,13 +259,6 @@ Profile with:
 time sketch shell < /dev/null  # Session startup time
 ```
 
-## Known Issues & Limitations
-
-See memory files for current task list and known issues:
-
-```bash
-ls -la ~/.claude/projects/-home-ipravd-src-sketch/memory/
-```
 
 ## Pull Request Process
 

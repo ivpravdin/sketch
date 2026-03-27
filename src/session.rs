@@ -204,12 +204,15 @@ impl Session {
 
     /// Process files marked for commitment from the overlay to the base filesystem.
     fn commit_marked_files(&self) {
-        // The commit list is written inside the session (at /.sketch-commit)
+        // The commit list is written inside the session (at /tmp/.sketch-commit)
         // which goes into the overlay upper directory
-        let commit_list_in_upper = self.overlay.upper_dir.join("/var/.sketch-commit");
+        let commit_list_in_upper = self.overlay.upper_dir.join("tmp/.sketch-commit");
 
         // Check if a commit list exists
         if !commit_list_in_upper.exists() {
+            if self.verbose {
+                eprintln!("sketch: no marked files to commit");
+            }
             return;
         }
 
@@ -217,6 +220,8 @@ impl Session {
         match std::fs::read_to_string(&commit_list_in_upper) {
             Ok(content) => {
                 let mut committed_count = 0;
+                let mut missing_count = 0;
+
                 for line in content.lines() {
                     let file_path = line.trim();
                     if file_path.is_empty() {
@@ -227,7 +232,7 @@ impl Session {
                     let upper_rel_path = file_path.trim_start_matches('/');
                     let upper_file = self.overlay.upper_dir.join(upper_rel_path);
 
-                    // Only commit if the file exists in the overlay
+                    // Check if the file exists in the overlay
                     if upper_file.exists() {
                         match std::fs::copy(&upper_file, file_path) {
                             Ok(_) => {
@@ -237,22 +242,26 @@ impl Session {
                                 committed_count += 1;
                             }
                             Err(e) => {
-                                if self.verbose {
-                                    eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
-                                }
+                                eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
                             }
                         }
+                    } else {
+                        eprintln!("sketch: warning: marked file does not exist in overlay: {}", file_path);
+                        missing_count += 1;
                     }
                 }
 
-                if self.verbose && committed_count > 0 {
-                    eprintln!("sketch: committed {} file(s)", committed_count);
+                if self.verbose {
+                    if committed_count > 0 {
+                        eprintln!("sketch: committed {} file(s)", committed_count);
+                    }
+                    if missing_count > 0 {
+                        eprintln!("sketch: {} marked file(s) were not found", missing_count);
+                    }
                 }
             }
             Err(e) => {
-                if self.verbose {
-                    eprintln!("sketch: warning: failed to read commit list: {}", e);
-                }
+                eprintln!("sketch: warning: failed to read commit list: {}", e);
             }
         }
     }
