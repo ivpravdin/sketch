@@ -18,7 +18,7 @@ pub struct OverlaySession {
 ///
 /// Uses SHA256 hash of the mount path to ensure different mount points
 /// (e.g., /home/user and /home_user) don't collide.
-fn mount_name_from_path(mountpoint: &str) -> String {
+pub fn mount_name_from_path(mountpoint: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(mountpoint.as_bytes());
     let hash = hasher.finalize();

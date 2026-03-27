@@ -223,14 +223,44 @@ impl Session {
                 let mut missing_count = 0;
 
                 for line in content.lines() {
-                    let file_path = line.trim();
-                    if file_path.is_empty() {
+                    let entry = line.trim();
+                    if entry.is_empty() {
                         continue;
                     }
 
-                    // Get the corresponding file from the overlay upper directory
-                    let upper_rel_path = file_path.trim_start_matches('/');
-                    let upper_file = self.overlay.upper_dir.join(upper_rel_path);
+                    // Parse the new format: MOUNTPOINT|FILE_PATH
+                    // e.g., "/home|/home/user/.bashrc" or "/|/etc/nginx.conf"
+                    let parts: Vec<&str> = entry.splitn(2, '|').collect();
+                    if parts.len() != 2 {
+                        eprintln!("sketch: warning: invalid commit list entry (no mount): {}", entry);
+                        continue;
+                    }
+
+                    let mount_point = parts[0];
+                    let file_path = parts[1];
+
+                    // Find the correct upper directory for this mount point
+                    let upper_dir = if mount_point == "/" {
+                        // Root overlay
+                        self.overlay.upper_dir.clone()
+                    } else {
+                        // Extra mount: compute the upper directory path
+                        let mount_hash = crate::overlay::mount_name_from_path(mount_point);
+                        self.overlay.session_dir.join(format!("upper-{}", mount_hash))
+                    };
+
+                    // Compute relative path within the mount point
+                    let rel_path = if mount_point == "/" {
+                        file_path.trim_start_matches('/')
+                    } else {
+                        // Remove the mount_point prefix from file_path
+                        file_path
+                            .strip_prefix(mount_point)
+                            .unwrap_or(file_path)
+                            .trim_start_matches('/')
+                    };
+
+                    let upper_file = upper_dir.join(rel_path);
 
                     // Check if the file exists in the overlay
                     if upper_file.exists() {

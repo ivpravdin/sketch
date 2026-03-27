@@ -246,6 +246,9 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         .open(&commit_list_path)
         .map_err(|e| format!("Failed to open commit list: {}", e))?;
 
+    // Build a list of mount points from /proc/mounts for finding which mount each file belongs to
+    let mount_points = get_mount_points()?;
+
     for file_path in files {
         // Resolve relative paths to absolute paths
         let abs_path = if PathBuf::from(file_path).is_absolute() {
@@ -265,13 +268,52 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
             return Err(format!("File does not exist in overlayfs: {}", abs_path.display()));
         }
 
+        // Find the longest matching mount point for this file
+        let mount_point = find_mount_for_path(&abs_path, &mount_points)?;
+
         let abs_path_str = abs_path.to_string_lossy().to_string();
-        writeln!(file, "{}", abs_path_str)
+        writeln!(file, "{}|{}", mount_point, abs_path_str)
             .map_err(|e| format!("Failed to write to commit list: {}", e))?;
         println!("sketch: marked for commit: {}", abs_path_str);
     }
 
     Ok(())
+}
+
+/// Parse /proc/mounts and return a sorted list of mount points (longest first)
+fn get_mount_points() -> Result<Vec<String>, String> {
+    let mounts_content = std::fs::read_to_string("/proc/mounts")
+        .map_err(|e| format!("Failed to read /proc/mounts: {}", e))?;
+
+    let mut mount_points: Vec<String> = Vec::new();
+    for line in mounts_content.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            mount_points.push(parts[1].to_string());
+        }
+    }
+
+    // Sort by length descending so we match the longest (most specific) mount point first
+    mount_points.sort_by(|a, b| b.len().cmp(&a.len()));
+    Ok(mount_points)
+}
+
+/// Find the longest matching mount point for a file path
+fn find_mount_for_path(path: &std::path::PathBuf, mount_points: &[String]) -> Result<String, String> {
+    let path_str = path.to_string_lossy();
+
+    for mount in mount_points {
+        if path_str.starts_with(mount) {
+            // Make sure it's a complete path component match (not partial)
+            // e.g., /home matches /home/user but not /homex
+            if mount == "/" || path_str.len() == mount.len() || path_str.as_bytes()[mount.len()] == b'/' {
+                return Ok(mount.clone());
+            }
+        }
+    }
+
+    // Fallback to root mount if no match found
+    Ok("/".to_string())
 }
 
 fn print_status() {
