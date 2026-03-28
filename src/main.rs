@@ -4,41 +4,19 @@ mod metadata;
 mod overlay;
 mod package;
 mod session;
-mod userns;
 
 use std::process;
 
 fn main() {
     let config = cli::parse_args();
 
-    // Check privileges: need root OR user namespace support for session commands
+    // Check privileges: need root for session commands
     if !nix::unistd::geteuid().is_root() {
         match config.command {
             cli::Command::Clean | cli::Command::List(_) | cli::Command::Status => {}
             _ => {
-                if !userns::can_use_user_namespaces() {
-                    eprintln!("sketch: must be run as root (try: sudo sketch)");
-                    eprintln!("sketch: tip: user namespaces not available on this system (requires kernel 5.11+)");
-                    process::exit(1);
-                }
-
-                // Mark that we're in a user namespace (for overlay mounting)
-                // Do this BEFORE re-exec so it's inherited by the unshare'd process
-                std::env::set_var("SKETCH_USER_NAMESPACE", "1");
-
-                // Re-execute with unshare to set up user and mount namespaces
-                // This is more reliable than direct setup, especially for overlayfs
-                if std::env::var("SKETCH_IN_UNSHARE").is_err() {
-                    if config.verbose {
-                        eprintln!("sketch: re-executing with unshare --user --map-root-user");
-                    }
-                    reexec_with_unshare(&config);
-                    process::exit(1); // Should not reach here if exec succeeds
-                }
-
-                if config.verbose {
-                    eprintln!("sketch: running in user namespace");
-                }
+                eprintln!("sketch: must be run as root (try: sudo sketch)");
+                process::exit(1);
             }
         }
     }
@@ -182,43 +160,6 @@ fn main() {
             }
         }
     }
-}
-
-fn reexec_with_unshare(config: &cli::Config) {
-    use std::env;
-    use std::ffi::CString;
-
-    // Get the path to the current executable
-    let exe_path = env::current_exe()
-        .expect("Failed to get current executable path");
-    let exe_str = exe_path.to_string_lossy().to_string();
-
-    // Collect the original command line arguments
-    // Match the successful test.sh approach: add --pid, --fork, and --mount-proc
-    let mut args: Vec<CString> = vec![CString::new("unshare").unwrap()];
-    args.push(CString::new("--user").unwrap());
-    args.push(CString::new("--map-root-user").unwrap());
-    args.push(CString::new("--mount").unwrap());
-    args.push(CString::new("--pid").unwrap());
-    args.push(CString::new("--fork").unwrap());
-    args.push(CString::new("--mount-proc").unwrap());
-    args.push(CString::new("--").unwrap());
-
-    // Add the sketch binary path
-    args.push(CString::new(exe_str).unwrap());
-
-    // Add the original sketch arguments (skip the binary name from env::args())
-    for arg in env::args().skip(1) {
-        args.push(CString::new(arg).unwrap());
-    }
-
-    // Set environment variable to indicate we're in unshare
-    env::set_var("SKETCH_IN_UNSHARE", "1");
-
-    // Replace current process with unshare
-    let _err = nix::unistd::execvp(&args[0], &args);
-    // execvp should never return on success, only on error
-    eprintln!("sketch: failed to exec unshare");
 }
 
 fn handle_commit(files: &[String]) -> Result<(), String> {
@@ -367,21 +308,6 @@ fn print_status() {
     println!(
         "  Running as root:     {}",
         if is_root { "yes" } else { "no" }
-    );
-
-    // User namespace support
-    let userns = std::fs::read_to_string("/proc/sys/user/max_user_namespaces")
-        .ok()
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .map(|n| n > 0)
-        .unwrap_or(false);
-    println!(
-        "  User namespaces:     {}",
-        if userns {
-            "available"
-        } else {
-            "not available"
-        }
     );
 
     // Package manager

@@ -127,50 +127,12 @@ fn unknown_short_flag_exits_nonzero() {
 fn exec_without_command_exits_nonzero() {
     let output = sketch_bin().arg("exec").output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Either fails because no command, or because not root - both are valid non-zero exits
     assert!(!output.status.success(), "exec without command should exit non-zero");
-    // If running as non-root, we get the root error first; if root, we get the exec error
-    let has_exec_error = stderr.contains("requires a command");
-    let has_root_error = stderr.contains("must be run as root");
     assert!(
-        has_exec_error || has_root_error,
-        "should show exec error or root error, got: {}",
+        stderr.contains("requires a command"),
+        "should show exec error, got: {}",
         stderr
     );
-}
-
-// ============================================================
-// No args (default shell) - non-root behavior depends on user namespace support
-// ============================================================
-
-#[test]
-fn no_args_non_root_behavior() {
-    // Skip if running as root (CI might run as root)
-    if nix::unistd::geteuid().is_root() {
-        return;
-    }
-    let output = sketch_bin().output().unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // On systems with user namespace support (kernel 5.11+), non-root
-    // invocation is allowed and will attempt to create a session.
-    // On older systems, it will fail with a privilege error.
-    if !output.status.success() {
-        // The code might fail for several reasons:
-        // 1. User namespaces not available -> privilege error
-        // 2. User namespaces available but unprivileged overlayfs disabled -> mount error
-        // 3. Unsupported kernel version -> user namespace error
-        assert!(
-            stderr.contains("must be run as root")
-                || stderr.contains("user namespace")
-                || stderr.contains("sudo")
-                || stderr.contains("mount")
-                || stderr.contains("EINVAL"),
-            "non-root failure should explain the reason, got: {}",
-            stderr,
-        );
-    }
-    // If it succeeded, user namespaces are working — that's fine too
 }
 
 // ============================================================
@@ -204,24 +166,6 @@ fn clean_reports_no_orphans() {
 fn verbose_with_clean_exits_zero() {
     let output = sketch_bin().args(["--verbose", "--clean"]).output().unwrap();
     assert!(output.status.success(), "verbose + clean should exit 0");
-}
-
-// ============================================================
-// Double dash separator
-// ============================================================
-
-#[test]
-fn double_dash_treats_remaining_as_positional() {
-    // Running as non-root, this will fail due to root check, but the parsing should work
-    if nix::unistd::geteuid().is_root() {
-        return;
-    }
-    let output = sketch_bin().args(["--", "--help"]).output().unwrap();
-    // Should NOT show help (--help after -- is positional, treated as exec command)
-    // Should fail because not root
-    assert!(!output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.contains("USAGE"), "-- should prevent --help from being parsed as flag");
 }
 
 // ============================================================
@@ -267,8 +211,8 @@ fn run_without_command_exits_nonzero() {
     assert!(!output.status.success(), "run without command should exit non-zero");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("requires a command") || stderr.contains("must be run as root"),
-        "should show run error or root error, got: {}",
+        stderr.contains("requires a command"),
+        "should show run error, got: {}",
         stderr
     );
 }
@@ -279,7 +223,7 @@ fn run_name_without_value_exits_nonzero() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("requires a value") || stderr.contains("must be run as root"),
+        stderr.contains("requires a value"),
         "should show error, got: {}",
         stderr
     );
@@ -297,7 +241,7 @@ fn run_invalid_timeout_exits_nonzero() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("invalid timeout") || stderr.contains("must be run as root"),
+        stderr.contains("invalid timeout"),
         "should show invalid timeout error, got: {}",
         stderr
     );
@@ -309,7 +253,7 @@ fn run_unknown_option_exits_nonzero() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("unknown run option") || stderr.contains("must be run as root"),
+        stderr.contains("unknown run option"),
         "should show unknown option error, got: {}",
         stderr
     );

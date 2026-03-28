@@ -165,11 +165,6 @@ impl Session {
         self.overlay.mount_overlay()?;
 
         if self.verbose {
-            eprintln!("sketch: finalizing root structure...");
-        }
-        self.overlay.finalize_root_structure()?;
-
-        if self.verbose {
             eprintln!("sketch: mounting virtual filesystems...");
         }
         self.overlay.mount_virtual_filesystems()?;
@@ -337,37 +332,11 @@ impl Session {
                     process::exit(1);
                 }
 
-                // For user namespaces, pivot_root may fail if the merged root isn't a proper mount
-                // In that case, try to use chroot instead as a fallback
-                let in_user_namespace = std::env::var("SKETCH_USER_NAMESPACE").is_ok();
-
                 if self.verbose {
                     eprintln!("sketch: [child] changing root...");
                 }
 
-                let pivot_result = if in_user_namespace {
-                    // In user namespaces, try chroot first (more reliable than pivot_root with bind mounts)
-                    use std::ffi::CString;
-                    let merged_cstr = CString::new(self.overlay.merged_dir.to_string_lossy().as_bytes()).unwrap();
-                    match unsafe { libc::chroot(merged_cstr.as_ptr()) } {
-                        0 => {
-                            // chroot succeeded, now change to root
-                            if nix::unistd::chdir("/").is_ok() {
-                                Ok(())
-                            } else {
-                                Err("Failed to chdir to /".to_string())
-                            }
-                        }
-                        _ => {
-                            // chroot failed, try pivot_root as fallback
-                            self.overlay.pivot_root()
-                        }
-                    }
-                } else {
-                    self.overlay.pivot_root()
-                };
-
-                if let Err(e) = pivot_result {
+                if let Err(e) = self.overlay.pivot_root() {
                     eprintln!("sketch: failed to change root: {}", e);
                     process::exit(1);
                 }

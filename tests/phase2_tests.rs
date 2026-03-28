@@ -24,10 +24,6 @@ fn is_root() -> bool {
 
 #[test]
 fn run_echo_exits_zero() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "echo", "hello"])
         .output()
@@ -39,10 +35,6 @@ fn run_echo_exits_zero() {
 
 #[test]
 fn run_without_separator_works() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     // run should also work without -- if the command doesn't look like a flag
     let output = sketch_bin()
         .args(["run", "echo", "world"])
@@ -55,10 +47,6 @@ fn run_without_separator_works() {
 
 #[test]
 fn run_false_exits_nonzero() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "false"])
         .output()
@@ -68,10 +56,6 @@ fn run_false_exits_nonzero() {
 
 #[test]
 fn run_exit_code_propagated() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "sh", "-c", "exit 42"])
         .output()
@@ -81,10 +65,6 @@ fn run_exit_code_propagated() {
 
 #[test]
 fn run_captures_stdout_and_stderr() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "sh", "-c", "echo out; echo err >&2"])
         .output()
@@ -97,10 +77,6 @@ fn run_captures_stdout_and_stderr() {
 
 #[test]
 fn run_nonexistent_command_exits_127() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "nonexistent_cmd_xyz"])
         .output()
@@ -114,10 +90,6 @@ fn run_nonexistent_command_exits_127() {
 
 #[test]
 fn run_with_name_succeeds() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--name", "my-test-session", "--", "echo", "named"])
         .output()
@@ -133,10 +105,6 @@ fn run_with_name_succeeds() {
 
 #[test]
 fn run_with_timeout_completes_before_deadline() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--timeout", "10", "--", "echo", "fast"])
         .output()
@@ -148,10 +116,6 @@ fn run_with_timeout_completes_before_deadline() {
 
 #[test]
 fn run_with_timeout_kills_slow_command() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
 
     use std::time::Instant;
     let start = Instant::now();
@@ -184,10 +148,6 @@ fn run_with_timeout_kills_slow_command() {
 
 #[test]
 fn run_file_creation_does_not_persist() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let test_file = "/tmp/sketch_run_isolation_test";
     let _ = fs::remove_file(test_file);
 
@@ -201,10 +161,6 @@ fn run_file_creation_does_not_persist() {
 
 #[test]
 fn run_env_vars_set() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["run", "--", "sh", "-c", "echo $SKETCH_SESSION"])
         .output()
@@ -477,26 +433,12 @@ fn status_shows_package_manager_section() {
     );
 }
 
-#[test]
-fn status_works_without_root() {
-    if nix::unistd::geteuid().is_root() {
-        eprintln!("SKIPPED: running as root");
-        return;
-    }
-    let output = sketch_bin().arg("status").output().unwrap();
-    assert!(output.status.success(), "status should work without root");
-}
-
 // ============================================================
 // Cross-command integration: run + list
 // ============================================================
 
 #[test]
 fn run_creates_metadata_visible_to_list() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
 
     // Run a command that sleeps briefly, then check if list can see it
     // We use a very short sleep to test metadata creation during session
@@ -526,10 +468,6 @@ fn run_creates_metadata_visible_to_list() {
 
 #[test]
 fn run_cleans_up_temp_dirs() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
 
     let before: Vec<String> = fs::read_dir("/tmp")
         .unwrap()
@@ -556,10 +494,6 @@ fn run_cleans_up_temp_dirs() {
 
 #[test]
 fn run_with_timeout_cleans_up() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
 
     let before: Vec<String> = fs::read_dir("/tmp")
         .unwrap()
@@ -594,10 +528,6 @@ fn run_with_timeout_cleans_up() {
 
 #[test]
 fn run_verbose_prints_timeout_info() {
-    if !is_root() {
-        eprintln!("SKIPPED: requires root");
-        return;
-    }
     let output = sketch_bin()
         .args(["--verbose", "run", "--timeout", "30", "--", "true"])
         .output()

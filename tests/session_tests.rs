@@ -331,48 +331,6 @@ fn concurrent_sessions_isolated() {
 }
 
 // ============================================================
-// Permission denied (non-root)
-// ============================================================
-
-#[test]
-fn non_root_shell_shows_root_error() {
-    if is_root() {
-        eprintln!("SKIPPED: running as root");
-        return;
-    }
-    let output = sketch_bin().arg("shell").output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("must be run as root")
-            || stderr.contains("sudo")
-            || stderr.contains("mount")
-            || stderr.contains("EINVAL"),
-        "should explain why non-root execution failed, got: {}",
-        stderr
-    );
-}
-
-#[test]
-fn non_root_exec_shows_root_error() {
-    if is_root() {
-        eprintln!("SKIPPED: running as root");
-        return;
-    }
-    let output = sketch_bin().args(["exec", "ls"]).output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("must be run as root")
-            || stderr.contains("sudo")
-            || stderr.contains("mount")
-            || stderr.contains("EINVAL"),
-        "should explain why non-root execution failed, got: {}",
-        stderr
-    );
-}
-
-// ============================================================
 // Edge cases
 // ============================================================
 

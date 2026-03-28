@@ -31,8 +31,6 @@ pub struct ListOptions {
 pub struct Config {
     pub command: Command,
     pub verbose: bool,
-    pub force: bool,
-    pub preserve_home: bool,
 }
 
 pub fn parse_args() -> Config {
@@ -56,8 +54,6 @@ pub fn parse_args() -> Config {
                 return Config {
                     command: Command::Clean,
                     verbose,
-                    force: false,
-                    preserve_home: false,
                 };
             }
             "--" => {
@@ -114,8 +110,6 @@ pub fn parse_args() -> Config {
     Config {
         command,
         verbose,
-        force: false,
-        preserve_home: false,
     }
 }
 
