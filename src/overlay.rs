@@ -65,7 +65,6 @@ impl OverlaySession {
 
     /// Set up mount namespace for the session.
     /// Creates a new mount namespace for filesystem isolation.
-    /// Mounts will be made private after the overlay is mounted (see finalize_mounts).
     pub fn setup_namespaces(&self) -> Result<(), String> {
         unshare(CloneFlags::CLONE_NEWNS)
             .map_err(|e| format!("Failed to create mount namespace: {}", e))?;
@@ -73,9 +72,7 @@ impl OverlaySession {
         Ok(())
     }
 
-    /// Finalize mounts by making them private so our changes don't propagate to the host.
-    /// This should be called after the overlay is mounted.
-    pub fn finalize_mounts(&self) -> Result<(), String> {
+    pub fn make_mount_private(&self) -> Result<(), String> {
         mount(
             None::<&str>,
             "/",

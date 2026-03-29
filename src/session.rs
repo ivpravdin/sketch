@@ -160,6 +160,11 @@ impl Session {
         self.overlay.setup_namespaces()?;
 
         if self.verbose {
+            eprintln!("sketch: making root mount private...");
+        }
+        self.overlay.make_mount_private()?;
+
+        if self.verbose {
             eprintln!("sketch: mounting overlay filesystem...");
         }
         self.overlay.mount_overlay()?;
@@ -168,12 +173,6 @@ impl Session {
             eprintln!("sketch: mounting virtual filesystems...");
         }
         self.overlay.mount_virtual_filesystems()?;
-
-        // Make mounts private AFTER all mounts are done (including virtual filesystems)
-        if self.verbose {
-            eprintln!("sketch: making mounts private...");
-        }
-        self.overlay.finalize_mounts()?;
 
         if self.verbose {
             eprintln!("sketch: mounting additional partitions...");
@@ -323,7 +322,7 @@ impl Session {
         // Fork so we can wait for the child and then clean up
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
-                // Child process: create isolated mount namespace, then pivot root
+                // Child process: create its own mount namespace (inherits parent's mounts)
                 if self.verbose {
                     eprintln!("sketch: [child] creating isolated mount namespace...");
                 }
@@ -337,7 +336,7 @@ impl Session {
                 }
 
                 if let Err(e) = self.overlay.pivot_root() {
-                    eprintln!("sketch: failed to change root: {}", e);
+                    eprintln!("sketch: [child] failed to change root: {}", e);
                     process::exit(1);
                 }
 
