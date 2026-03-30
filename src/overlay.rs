@@ -1,9 +1,11 @@
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
-use sha2::{Sha256, Digest};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+
+use crate::utils::{fnv1a_hash, session_id};
 
 pub struct OverlaySession {
     pub session_dir: PathBuf,
@@ -19,20 +21,13 @@ pub struct OverlaySession {
 /// Uses SHA256 hash of the mount path to ensure different mount points
 /// (e.g., /home/user and /home_user) don't collide.
 pub fn mount_name_from_path(mountpoint: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(mountpoint.as_bytes());
-    let hash = hasher.finalize();
-    // Use first 12 hex characters of hash (48 bits) for reasonable uniqueness
-    // and readability. Format each byte as 2-character hex.
-    hash[..6]
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>()
+    let hash = fnv1a_hash(mountpoint.as_bytes());
+    format!("{:08x}", hash)
 }
 
 impl OverlaySession {
     pub fn new() -> io::Result<Self> {
-        let session_id = uuid::Uuid::new_v4();
+        let session_id = session_id();
         let session_dir = PathBuf::from(format!("/tmp/sketch-{}", session_id));
 
         let upper_dir = session_dir.join("upper");

@@ -8,7 +8,6 @@ use crate::cli::RunOptions;
 use crate::fs_utils;
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
-use crate::package;
 
 pub struct Session {
     overlay: OverlaySession,
@@ -184,15 +183,6 @@ impl Session {
         }
         self.overlay.ensure_dns_resolution()?;
 
-        if self.verbose {
-            eprintln!("sketch: preparing package manager support...");
-        }
-        self.prepare_package_managers();
-
-        // Note: pivot_root() is NOT called here anymore.
-        // It must be done in the child process after fork(),
-        // so the parent stays in the original root for proper cleanup.
-
         Ok(())
     }
 
@@ -290,27 +280,6 @@ impl Session {
         }
     }
 
-    /// Detect available package managers, log in verbose mode, and ensure
-    /// their state directories exist in the overlay upper layer so writes
-    /// (lock files, DB updates) don't fail.
-    fn prepare_package_managers(&self) {
-        if let Some(pm) = package::detect_package_manager() {
-            if self.verbose {
-                eprintln!("sketch: detected package manager: {}", pm.name());
-            }
-
-            // Ensure package manager state directories are writable in the overlay.
-            // On some minimal systems these directories may not exist; create them
-            // in the upper layer so the merged view includes them.
-            for dir in pm.state_dirs() {
-                let upper_path = self.overlay.upper_dir.join(dir.trim_start_matches('/'));
-                let _ = std::fs::create_dir_all(&upper_path);
-            }
-        } else if self.verbose {
-            eprintln!("sketch: no system package manager detected");
-        }
-    }
-
     fn run_command(mut self, cmd: &str, args: &[&str], timeout: Option<u64>, extra_env: &[(String, String)]) -> Result<i32, String> {
         if self.verbose {
             eprintln!("sketch: spawning: {} {}", cmd, args.join(" "));
@@ -351,13 +320,6 @@ impl Session {
                 std::env::set_var("SKETCH_SESSION_DIR", &self.overlay.session_dir);
                 std::env::set_var("SKETCH_ORIGINAL_UID", self.original_uid.to_string());
                 std::env::set_var("SKETCH_ORIGINAL_GID", self.original_gid.to_string());
-
-                // Set package-manager-specific environment variables
-                if let Some(pm) = package::detect_package_manager() {
-                    for (key, val) in pm.env_vars() {
-                        std::env::set_var(key, val);
-                    }
-                }
 
                 // Set user-provided environment variables (--env KEY=VALUE)
                 for (key, val) in extra_env {

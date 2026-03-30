@@ -1,4 +1,4 @@
-# Sketch
+# Sketch 📝
 
 **Ephemeral, disposable machine sessions using overlay filesystems.**
 
@@ -26,12 +26,12 @@ sketch shell
 
 ## Features
 
-✅ **Complete Filesystem Isolation** — All changes exist in temporary overlays
-✅ **Selective Persistence** — Commit specific files back to the host
-✅ **Resumable Sessions** — Reconnect to disconnected sessions
-✅ **Minimal Overhead** — Fast startup, efficient overlay mounting
-✅ **Per-Mount Isolation** — Every filesystem gets its own overlay
-✅ **Safe Experimentation** — Perfect for testing packages, configs, scripts
+- ✅ **Complete Filesystem Isolation** — All changes exist in temporary overlays
+- ✅ **Selective Persistence** — Commit specific files back to the host
+- ✅ **Resumable Sessions** — Reconnect to disconnected sessions
+- ✅ **Minimal Overhead** — Fast startup, efficient overlay mounting
+- ✅ **Per-Mount Isolation** — Every filesystem gets its own overlay
+- ✅ **Safe Experimentation** — Perfect for testing packages, configs, scripts
 
 ## Quick Start
 

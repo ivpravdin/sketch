@@ -2,8 +2,8 @@ mod cli;
 mod fs_utils;
 mod metadata;
 mod overlay;
-mod package;
 mod session;
+mod utils;
 
 use std::process;
 
@@ -309,16 +309,4 @@ fn print_status() {
         "  Running as root:     {}",
         if is_root { "yes" } else { "no" }
     );
-
-    // Package manager
-    println!("\nPackage manager:");
-    if let Some(pm) = package::detect_package_manager() {
-        println!("  System:              {}", pm.name());
-    } else {
-        println!("  System:              none detected");
-    }
-    let user_pms = package::detect_user_package_managers();
-    if !user_pms.is_empty() {
-        println!("  User-level:          {}", user_pms.join(", "));
-    }
 }
