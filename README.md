@@ -259,7 +259,7 @@ A: Sketch uses `/tmp`. Only modified data counts toward disk usage. Run `sketch 
 A: Files are committed with your user's ownership. Root can commit any ownership.
 
 **Q: How do I inspect a disconnected session's files?**
-A: Use `sketch attach <SESSION_ID>` to reconnect and browse files.
+A: This feature is in-progress
 
 **Q: Performance impact?**
 A: Minimal. OverlayFS adds negligible overhead for reads, writes go to the upper directory. Startup is ~1 second.

@@ -18,58 +18,6 @@ pub struct Session {
 }
 
 impl Session {
-    /// Attach to an existing session directory (for resuming disconnected sessions).
-    pub fn attach_existing(session_id: &str, verbose: bool) -> Result<Self, String> {
-        use std::path::PathBuf;
-
-        let session_dir = PathBuf::from(format!("/tmp/sketch-{}", session_id));
-
-        // Verify the session directory exists
-        if !session_dir.exists() {
-            return Err(format!("Session directory not found: {}", session_dir.display()));
-        }
-
-        // Load metadata to verify this is a valid sketch session
-        let _metadata = crate::metadata::SessionMetadata::load(&session_dir)?;
-
-        // Create an OverlaySession from the existing directory
-        // We need to construct the paths that would have been created
-        let upper_dir = session_dir.join("upper");
-        let work_dir = session_dir.join("work");
-        let merged_dir = session_dir.join("merged");
-
-        // Verify the overlay structure exists
-        if !upper_dir.exists() || !work_dir.exists() {
-            return Err(
-                format!("Invalid session directory structure (missing upper or work): {}", session_dir.display())
-            );
-        }
-
-        let overlay = crate::overlay::OverlaySession {
-            session_dir: session_dir.clone(),
-            upper_dir,
-            work_dir,
-            merged_dir,
-            mounted: false, // Will be mounted when needed
-            extra_mounts: Vec::new(),
-        };
-
-        let original_cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
-        let original_uid = nix::unistd::getuid().as_raw();
-        let original_gid = nix::unistd::getgid().as_raw();
-
-        if verbose {
-            eprintln!("sketch: attaching to session: {}", session_dir.display());
-        }
-
-        Ok(Self {
-            overlay,
-            original_cwd,
-            original_uid,
-            original_gid,
-            verbose,
-        })
-    }
 
     pub fn new(verbose: bool) -> Result<Self, String> {
         // Pre-check disk space before creating session directories
@@ -147,8 +95,12 @@ impl Session {
 
     /// Write session metadata to disk for `sketch list` to discover.
     fn write_metadata(&self, name: Option<String>, command: &str) -> Result<(), String> {
-        let id = self.overlay.session_id();
-        let meta = SessionMetadata::new(&id, name, command, &self.overlay.session_dir);
+        let meta = SessionMetadata::new(
+            &self.overlay.session_id,
+            name,
+            command,
+            &self.overlay.session_dir,
+        );
         meta.save(&self.overlay.session_dir)
     }
 
@@ -162,6 +114,11 @@ impl Session {
             eprintln!("sketch: making root mount private...");
         }
         self.overlay.make_mount_private()?;
+
+        if self.verbose {
+            eprintln!("sketch: chaning hostname...");
+        }
+        self.overlay.change_hostname()?;
 
         if self.verbose {
             eprintln!("sketch: mounting overlay filesystem...");
@@ -216,7 +173,10 @@ impl Session {
                     // e.g., "/home|/home/user/.bashrc" or "/|/etc/nginx.conf"
                     let parts: Vec<&str> = entry.splitn(2, '|').collect();
                     if parts.len() != 2 {
-                        eprintln!("sketch: warning: invalid commit list entry (no mount): {}", entry);
+                        eprintln!(
+                            "sketch: warning: invalid commit list entry (no mount): {}",
+                            entry
+                        );
                         continue;
                     }
 
@@ -230,7 +190,9 @@ impl Session {
                     } else {
                         // Extra mount: compute the upper directory path
                         let mount_hash = crate::overlay::mount_name_from_path(mount_point);
-                        self.overlay.session_dir.join(format!("upper-{}", mount_hash))
+                        self.overlay
+                            .session_dir
+                            .join(format!("upper-{}", mount_hash))
                     };
 
                     // Compute relative path within the mount point
@@ -260,7 +222,10 @@ impl Session {
                             }
                         }
                     } else {
-                        eprintln!("sketch: warning: marked file does not exist in overlay: {}", file_path);
+                        eprintln!(
+                            "sketch: warning: marked file does not exist in overlay: {}",
+                            file_path
+                        );
                         missing_count += 1;
                     }
                 }
@@ -280,7 +245,13 @@ impl Session {
         }
     }
 
-    fn run_command(mut self, cmd: &str, args: &[&str], timeout: Option<u64>, extra_env: &[(String, String)]) -> Result<i32, String> {
+    fn run_command(
+        mut self,
+        cmd: &str,
+        args: &[&str],
+        timeout: Option<u64>,
+        extra_env: &[(String, String)],
+    ) -> Result<i32, String> {
         if self.verbose {
             eprintln!("sketch: spawning: {} {}", cmd, args.join(" "));
             if let Some(t) = timeout {
@@ -417,7 +388,10 @@ fn wait_with_timeout(pid: Pid, timeout_secs: u64) -> i32 {
             Ok(WaitStatus::Signaled(_, sig, _)) => return 128 + sig as i32,
             Ok(WaitStatus::StillAlive) => {
                 if Instant::now() >= deadline {
-                    eprintln!("sketch: timeout ({}s) exceeded, killing session", timeout_secs);
+                    eprintln!(
+                        "sketch: timeout ({}s) exceeded, killing session",
+                        timeout_secs
+                    );
                     // Send SIGTERM first, then SIGKILL if needed
                     let _ = nix::sys::signal::kill(pid, Signal::SIGTERM);
                     std::thread::sleep(Duration::from_millis(500));

@@ -70,30 +70,11 @@ fn main() {
                 }
             }
         }
-        cli::Command::Commit(files) => {
-            match handle_commit(&files) {
-                Ok(()) => {},
-                Err(e) => {
-                    eprintln!("sketch: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        cli::Command::Attach(session_id) => {
-            match session::Session::attach_existing(&session_id, config.verbose) {
-                Ok(session) => {
-                    match session.start_shell() {
-                        Ok(code) => process::exit(code),
-                        Err(e) => {
-                            eprintln!("sketch: {}", e);
-                            process::exit(1);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("sketch: {}", e);
-                    process::exit(1);
-                }
+        cli::Command::Commit(files) => match handle_commit(&files) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("sketch: {}", e);
+                process::exit(1);
             }
         }
         cli::Command::List(options) => {
@@ -149,16 +130,14 @@ fn main() {
         cli::Command::Status => {
             print_status();
         }
-        cli::Command::Clean => {
-            match overlay::clean_orphaned() {
-                Ok(0) => println!("sketch: no orphaned sessions found"),
-                Ok(n) => println!("sketch: cleaned up {} orphaned session(s)", n),
-                Err(e) => {
-                    eprintln!("sketch: cleanup failed: {}", e);
-                    process::exit(1);
-                }
+        cli::Command::Clean => match overlay::clean_orphaned() {
+            Ok(0) => println!("sketch: no orphaned sessions found"),
+            Ok(n) => println!("sketch: cleaned up {} orphaned session(s)", n),
+            Err(e) => {
+                eprintln!("sketch: cleanup failed: {}", e);
+                process::exit(1);
             }
-        }
+        },
     }
 }
 
@@ -199,14 +178,20 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
             match std::env::current_dir() {
                 Ok(cwd) => cwd.join(file_path),
                 Err(e) => {
-                    return Err(format!("Failed to resolve path '{}': couldn't get current dir: {}", file_path, e));
+                    return Err(format!(
+                        "Failed to resolve path '{}': couldn't get current dir: {}",
+                        file_path, e
+                    ));
                 }
             }
         };
 
         // Check if the file exists in the overlayfs (in the current merged view)
         if !abs_path.exists() {
-            return Err(format!("File does not exist in overlayfs: {}", abs_path.display()));
+            return Err(format!(
+                "File does not exist in overlayfs: {}",
+                abs_path.display()
+            ));
         }
 
         // Find the longest matching mount point for this file
@@ -240,14 +225,20 @@ fn get_mount_points() -> Result<Vec<String>, String> {
 }
 
 /// Find the longest matching mount point for a file path
-fn find_mount_for_path(path: &std::path::PathBuf, mount_points: &[String]) -> Result<String, String> {
+fn find_mount_for_path(
+    path: &std::path::PathBuf,
+    mount_points: &[String],
+) -> Result<String, String> {
     let path_str = path.to_string_lossy();
 
     for mount in mount_points {
         if path_str.starts_with(mount) {
             // Make sure it's a complete path component match (not partial)
             // e.g., /home matches /home/user but not /homex
-            if mount == "/" || path_str.len() == mount.len() || path_str.as_bytes()[mount.len()] == b'/' {
+            if mount == "/"
+                || path_str.len() == mount.len()
+                || path_str.as_bytes()[mount.len()] == b'/'
+            {
                 return Ok(mount.clone());
             }
         }
@@ -272,7 +263,11 @@ fn print_status() {
     }
     println!(
         "  OverlayFS:           {}",
-        if overlayfs { "available" } else { "not available" }
+        if overlayfs {
+            "available"
+        } else {
+            "not available"
+        }
     );
 
     // Disk space
@@ -299,7 +294,10 @@ fn print_status() {
     println!("\nSessions:");
     println!("  Active:              {}", active);
     if stale > 0 {
-        println!("  Stale:               {} (run 'sketch --clean' to remove)", stale);
+        println!(
+            "  Stale:               {} (run 'sketch --clean' to remove)",
+            stale
+        );
     }
 
     // Privileges

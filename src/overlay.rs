@@ -1,13 +1,14 @@
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
+use nix::unistd::sethostname;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
 use crate::utils::{fnv1a_hash, session_id};
 
 pub struct OverlaySession {
+    pub session_id: String,
     pub session_dir: PathBuf,
     pub upper_dir: PathBuf,
     pub work_dir: PathBuf,
@@ -27,7 +28,7 @@ pub fn mount_name_from_path(mountpoint: &str) -> String {
 
 impl OverlaySession {
     pub fn new() -> io::Result<Self> {
-        let session_id = session_id();
+        let session_id = session_id().to_string();
         let session_dir = PathBuf::from(format!("/tmp/sketch-{}", session_id));
 
         let upper_dir = session_dir.join("upper");
@@ -39,6 +40,7 @@ impl OverlaySession {
         fs::create_dir_all(&merged_dir)?;
 
         Ok(Self {
+            session_id: session_id,
             session_dir,
             upper_dir,
             work_dir,
@@ -49,7 +51,7 @@ impl OverlaySession {
     }
 
     /// Extract the session UUID from the session directory name.
-    pub fn session_id(&self) -> String {
+    fn session_id(&self) -> String {
         self.session_dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -64,6 +66,16 @@ impl OverlaySession {
         unshare(CloneFlags::CLONE_NEWNS)
             .map_err(|e| format!("Failed to create mount namespace: {}", e))?;
 
+        unshare(CloneFlags::CLONE_NEWUTS)
+            .map_err(|e| format!("Failed to create UTS namespace: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn change_hostname(&self) -> Result<(), String> {
+        let hostname = format!("sketch-{}", self.session_id());
+        sethostname(&hostname)
+            .map_err(|e| format!("Failed to set hostname: {}", e))?;
         Ok(())
     }
 
@@ -108,9 +120,21 @@ impl OverlaySession {
         }
 
         let virtual_filesystems = [
-            VirtualFs { fstype: "proc",     host_path: "/proc", relative_target: "proc" },
-            VirtualFs { fstype: "sysfs",    host_path: "/sys",  relative_target: "sys" },
-            VirtualFs { fstype: "devtmpfs", host_path: "/dev",  relative_target: "dev" },
+            VirtualFs {
+                fstype: "proc",
+                host_path: "/proc",
+                relative_target: "proc",
+            },
+            VirtualFs {
+                fstype: "sysfs",
+                host_path: "/sys",
+                relative_target: "sys",
+            },
+            VirtualFs {
+                fstype: "devtmpfs",
+                host_path: "/dev",
+                relative_target: "dev",
+            },
         ];
 
         // Mount /proc, /sys, /dev into the merged root.
@@ -134,7 +158,14 @@ impl OverlaySession {
                         None::<&str>,
                     )
                 })
-                .map_err(|e| format!("Failed to mount {} at {}: {}", vfs.fstype, target.display(), e))?;
+                .map_err(|e| {
+                    format!(
+                        "Failed to mount {} at {}: {}",
+                        vfs.fstype,
+                        target.display(),
+                        e
+                    )
+                })?;
             }
         }
 
@@ -222,9 +253,27 @@ impl OverlaySession {
     pub fn mount_additional_filesystems(&mut self, verbose: bool) -> Result<(), String> {
         // Filesystems to skip: virtual/pseudo filesystems
         let skip_fstypes = [
-            "proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup", "cgroup2",
-            "pstore", "efivarfs", "bpf", "autofs", "hugetlbfs", "mqueue", "fusectl",
-            "configfs", "debugfs", "tracefs", "securityfs", "overlay", "nsfs", "ramfs",
+            "proc",
+            "sysfs",
+            "devtmpfs",
+            "devpts",
+            "tmpfs",
+            "cgroup",
+            "cgroup2",
+            "pstore",
+            "efivarfs",
+            "bpf",
+            "autofs",
+            "hugetlbfs",
+            "mqueue",
+            "fusectl",
+            "configfs",
+            "debugfs",
+            "tracefs",
+            "securityfs",
+            "overlay",
+            "nsfs",
+            "ramfs",
             "squashfs",
         ];
 
@@ -295,9 +344,7 @@ impl OverlaySession {
             }
 
             // Create target directory in merged_dir
-            let target = self
-                .merged_dir
-                .join(mountpoint.trim_start_matches('/'));
+            let target = self.merged_dir.join(mountpoint.trim_start_matches('/'));
 
             // Create the target directory if it doesn't exist
             if let Err(e) = fs::create_dir_all(&target) {
@@ -327,7 +374,11 @@ impl OverlaySession {
             ) {
                 Ok(_) => {
                     if verbose {
-                        eprintln!("sketch: mounted overlay for {} at {}", mountpoint, target.display());
+                        eprintln!(
+                            "sketch: mounted overlay for {} at {}",
+                            mountpoint,
+                            target.display()
+                        );
                     }
                     self.extra_mounts.push(target);
                 }
@@ -356,8 +407,7 @@ impl OverlaySession {
         nix::unistd::pivot_root(&self.merged_dir, &old_root)
             .map_err(|e| format!("Failed to pivot_root: {}", e))?;
 
-        std::env::set_current_dir("/")
-            .map_err(|e| format!("Failed to chdir to /: {}", e))?;
+        std::env::set_current_dir("/").map_err(|e| format!("Failed to chdir to /: {}", e))?;
 
         // Unmount old root lazily
         umount2("/mnt", MntFlags::MNT_DETACH)
@@ -461,7 +511,9 @@ pub fn clean_orphaned() -> io::Result<u32> {
                 // Check if session is actually stale by reading metadata
                 let metadata_path = path.join(".sketch-metadata.json");
                 if let Ok(metadata) = fs::read_to_string(&metadata_path) {
-                    if let Ok(meta) = serde_json::from_str::<crate::metadata::SessionMetadata>(&metadata) {
+                    if let Ok(meta) =
+                        serde_json::from_str::<crate::metadata::SessionMetadata>(&metadata)
+                    {
                         // Only clean up stale sessions (process no longer exists)
                         if !meta.is_alive() {
                             let merged = path.join("merged");

@@ -1,5 +1,5 @@
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn fnv1a_hash(input: &[u8]) -> u32 {
     const FNV_PRIME: u32 = 16777619;
@@ -15,8 +15,8 @@ pub fn fnv1a_hash(input: &[u8]) -> u32 {
     hash
 }
 
-// Time + PID 
-pub fn session_id() -> u64 {
+// Time + PID
+pub fn session_id() -> String {
     let t = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -28,5 +28,6 @@ pub fn session_id() -> u64 {
     x ^= x >> 33;
     x = x.wrapping_mul(0xff51afd7ed558ccd);
     x ^= x >> 33;
-    x
+    
+    format!("{:04x}", x & 0xffff)
 }

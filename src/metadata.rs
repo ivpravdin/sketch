@@ -51,8 +51,7 @@ impl SessionMetadata {
         let path = session_dir.join(METADATA_FILENAME);
         let json = fs::read_to_string(&path)
             .map_err(|e| format!("Failed to read metadata from {}: {}", path.display(), e))?;
-        serde_json::from_str(&json)
-            .map_err(|e| format!("Failed to parse metadata: {}", e))
+        serde_json::from_str(&json).map_err(|e| format!("Failed to parse metadata: {}", e))
     }
 
     pub fn is_alive(&self) -> bool {
@@ -227,7 +226,10 @@ mod tests {
     #[test]
     fn age_secs_for_just_created() {
         let meta = SessionMetadata::new("id", None, "cmd", Path::new("/tmp"));
-        assert!(meta.age_secs() < 2, "just-created session should have age < 2s");
+        assert!(
+            meta.age_secs() < 2,
+            "just-created session should have age < 2s"
+        );
     }
 
     #[test]
@@ -236,7 +238,8 @@ mod tests {
         meta.created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() - 30;
+            .as_secs()
+            - 30;
         let age = meta.format_age();
         assert!(age.ends_with('s'), "age should be in seconds: {}", age);
         assert!(!age.contains('m'), "should not have minutes: {}", age);
@@ -248,7 +251,8 @@ mod tests {
         meta.created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() - 150; // 2m 30s
+            .as_secs()
+            - 150; // 2m 30s
         let age = meta.format_age();
         assert!(age.contains('m'), "age should contain minutes: {}", age);
     }
@@ -259,7 +263,8 @@ mod tests {
         meta.created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() - 7200; // 2h
+            .as_secs()
+            - 7200; // 2h
         let age = meta.format_age();
         assert!(age.contains('h'), "age should contain hours: {}", age);
     }
@@ -270,7 +275,8 @@ mod tests {
         meta.created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs() - 100_000; // ~1.15 days
+            .as_secs()
+            - 100_000; // ~1.15 days
         let age = meta.format_age();
         assert!(age.contains('d'), "age should contain days: {}", age);
     }

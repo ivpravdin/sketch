@@ -24,7 +24,9 @@ pub fn setup_session_env(original_uid: u32, original_gid: u32) -> HashMap<String
     env_vars.insert("SKETCH_ORIGINAL_GID".into(), original_gid.to_string());
 
     // Preserve important env vars
-    for key in &["HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "PATH", "EDITOR", "VISUAL"] {
+    for key in &[
+        "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "PATH", "EDITOR", "VISUAL",
+    ] {
         if let Ok(val) = env::var(key) {
             env_vars.insert((*key).into(), val);
         }
@@ -164,5 +166,4 @@ mod tests {
             "/dev/null should be accessible on host"
         );
     }
-
 }
