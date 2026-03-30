@@ -64,11 +64,9 @@ sketch --clean
 
 ## Documentation
 
-- **[User Guide](USER_GUIDE.md)** — How to use Sketch
-- **[Architecture](ARCHITECTURE.md)** — How it works internally
-- **[Contributing](CONTRIBUTING.md)** — Development guide
-- **[Testing Guide](TESTING.md)** — Running tests (root and non-root)
-- **[CI/CD Workflows](.github/workflows/README.md)** — Automated testing setup
+- **[User Guide](docs/usage.md)** — How to use Sketch
+- **[Architecture](docs/architecture.md)** — How it works internally
+- **[Contributing](docs/contributing.md)** — Development guide
 
 ## How It Works
 
@@ -76,10 +74,47 @@ Sketch uses Linux **OverlayFS** and **namespaces** to create an isolated filesys
 
 1. **Overlay Mounts** — Each filesystem (root, /home, /var, etc.) gets an overlay layer
 2. **Mount Namespace** — Changes don't propagate to the host
+3. **UTS Namespace** — Used for hostname change
 3. **Pivot Root** — Process sees only the overlayed filesystem
 4. **Cleanup** — All overlays unmounted when session ends
 
-For details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For details, see [docs/architecture.md](docs/architecture.md).
+
+## Use Cases
+
+### Development & Testing
+
+```bash
+sketch shell
+(sketch) # make changes, compile, test
+(sketch) $ ./build.sh
+(sketch) $ ./run-tests.sh
+(sketch) $ sketch commit Makefile  # Keep just the Makefile changes
+(sketch) $ exit
+```
+
+### Temporary files
+
+```bash
+# Test configuration changes
+sketch shell
+(sketch) $ vim /home/user/test.c
+(sketch) $ gcc test.c && ./a.out
+(sketch) $ exit 
+```
+
+### Package Testing
+
+```bash
+# Try a package without installing it
+sketch shell
+(sketch) $ apt install experimental-package
+(sketch) $ experimental-package
+(sketch) $ exit
+# experimental-package is not installed on your host
+# Does not pollute your system
+```
+
 
 ## Commit Command Quick Reference
 
@@ -100,52 +135,6 @@ sketch shell
 sketch commit /etc/config.conf                    # Single file
 sketch commit file1 file2 file3                  # Multiple files
 sketch commit /etc/nginx/*.conf                  # Glob patterns
-```
-
-## Use Cases
-
-### Development & Testing
-
-```bash
-sketch shell
-(sketch) # make changes, compile, test
-(sketch) $ ./build.sh
-(sketch) $ ./run-tests.sh
-(sketch) $ sketch commit Makefile  # Keep just the Makefile changes
-(sketch) $ exit
-```
-
-### System Administration
-
-```bash
-# Test configuration changes
-sketch shell
-(sketch) $ cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
-(sketch) $ vim /etc/nginx/nginx.conf
-(sketch) $ nginx -t  # Test without affecting production
-(sketch) $ exit
-```
-
-### Scripting & Automation
-
-```bash
-# Run test suite safely
-sketch run --timeout 300 --name "test-suite" -- \
-  bash -c "make test && make coverage"
-
-# Parallel testing without interference
-for i in {1..4}; do
-  sketch run --name "test-$i" -- pytest tests/part-$i &
-done
-```
-
-### Package Testing
-
-```bash
-# Try a package without installing it
-sketch exec apt install -y experimental-software
-sketch exec experimental-software --version
-# Completely safe — nothing installed!
 ```
 
 ## Requirements
@@ -235,22 +224,25 @@ Sketch is **safe for testing**, not for running **untrusted code**.
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Contributions welcome! See [contributing.md](docs/contributing.md) for development setup and guidelines.
 
 ## License
 
-MIT License — See LICENSE file for details.
+MIT License
 
 ## FAQ
 
 **Q: Is Sketch a container?**
 A: No. It's much simpler — just overlay filesystems and mount namespaces. Use Docker/Podman for full container isolation with cgroups and more.
 
+**Q: Why not use a container?**
+A: Sketch provides more (and less) than a container. A Sketch session represents a copy of the host’s session state rather than a fully isolated environment, preserving things like the user’s shell context, environment variables, and working directory so it feels like a seamless continuation instead of a fresh sandbox. At the same time, it offers less isolation than a container—it doesn’t virtualize the entire filesystem, network stack, or enforce strict resource limits. Unlike containers, Sketch also doesn’t require pulling or managing images, which makes it faster to start and simpler to use. In short, containers prioritize isolation and reproducibility, while Sketch prioritizes continuity, low overhead, and zero image setup.
+
 **Q: Can I run untrusted code in Sketch?**
-A: No. Filesystem isolation is good, but processes can still access host network, IPC, and see other processes. Use containers for that.
+A: At your own risk. Sketch does not guarantee full isolation.
 
 **Q: Does Sketch work without root?**
-A: Yes, if your kernel supports user namespaces (Linux 5.11+). Check with `sketch status`.
+A: Not yet, but this feature is planned.
 
 **Q: What about disk space?**
 A: Sketch uses `/tmp`. Only modified data counts toward disk usage. Run `sketch --clean` to remove orphaned sessions.
@@ -272,5 +264,3 @@ A: Minimal. OverlayFS adds negligible overhead for reads, writes go to the upper
 ---
 
 **Questions?** Check the documentation or file an issue on GitHub.
-
-**Ready to try it?** Start with `sketch shell`!
