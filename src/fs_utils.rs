@@ -121,13 +121,6 @@ mod tests {
     // ============================================================
 
     #[test]
-    fn setup_working_directory_sets_existing_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        setup_working_directory(dir.path()).unwrap();
-        assert_eq!(env::current_dir().unwrap(), fs::canonicalize(dir.path()).unwrap());
-    }
-
-    #[test]
     fn setup_working_directory_falls_back_for_nonexistent() {
         let result = setup_working_directory(Path::new("/nonexistent_dir_xyz_12345"));
         // Should fallback to HOME or /

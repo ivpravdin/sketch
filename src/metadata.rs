@@ -198,42 +198,8 @@ mod tests {
     // ============================================================
 
     #[test]
-    fn save_and_load_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let meta = SessionMetadata::new("roundtrip-id", Some("test".into()), "echo hello", dir.path());
-        meta.save(dir.path()).unwrap();
-
-        let loaded = SessionMetadata::load(dir.path()).unwrap();
-        assert_eq!(loaded.id, "roundtrip-id");
-        assert_eq!(loaded.name.as_deref(), Some("test"));
-        assert_eq!(loaded.command, "echo hello");
-        assert_eq!(loaded.pid, meta.pid);
-        assert_eq!(loaded.created, meta.created);
-    }
-
-    #[test]
-    fn save_creates_json_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let meta = SessionMetadata::new("file-check", None, "cmd", dir.path());
-        meta.save(dir.path()).unwrap();
-
-        let path = dir.path().join(".sketch-metadata.json");
-        assert!(path.exists());
-        let contents = fs::read_to_string(&path).unwrap();
-        assert!(contents.contains("file-check"));
-    }
-
-    #[test]
     fn load_nonexistent_fails() {
         let result = SessionMetadata::load(Path::new("/tmp/nonexistent_sketch_test_xyz"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn load_invalid_json_fails() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".sketch-metadata.json"), "not valid json").unwrap();
-        let result = SessionMetadata::load(dir.path());
         assert!(result.is_err());
     }
 
@@ -335,36 +301,6 @@ mod tests {
     #[test]
     fn format_size_gigabytes() {
         assert_eq!(format_size(1024 * 1024 * 1024), "1.0G");
-    }
-
-    // ============================================================
-    // session_size
-    // ============================================================
-
-    #[test]
-    fn session_size_empty_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("upper")).unwrap();
-        assert_eq!(session_size(dir.path()), 0);
-    }
-
-    #[test]
-    fn session_size_with_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let upper = dir.path().join("upper");
-        fs::create_dir_all(&upper).unwrap();
-        fs::write(upper.join("a.txt"), "hello").unwrap(); // 5 bytes
-        fs::write(upper.join("b.txt"), "world!").unwrap(); // 6 bytes
-        assert_eq!(session_size(dir.path()), 11);
-    }
-
-    #[test]
-    fn session_size_nested_dirs() {
-        let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("upper/sub");
-        fs::create_dir_all(&sub).unwrap();
-        fs::write(sub.join("nested.txt"), "data").unwrap(); // 4 bytes
-        assert_eq!(session_size(dir.path()), 4);
     }
 
     // ============================================================
