@@ -1,5 +1,4 @@
 mod cli;
-mod fs_utils;
 mod metadata;
 mod overlay;
 mod session;

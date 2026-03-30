@@ -2,10 +2,9 @@ use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
-use std::process;
+use std::{env, process};
 
 use crate::cli::RunOptions;
-use crate::fs_utils;
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
 
@@ -20,28 +19,6 @@ pub struct Session {
 impl Session {
 
     pub fn new(verbose: bool) -> Result<Self, String> {
-        // Pre-check disk space before creating session directories
-        use std::path::Path;
-        match fs_utils::check_disk_space(Path::new("/tmp"))? {
-            fs_utils::DiskCheck::Ok(info) => {
-                if verbose {
-                    eprintln!(
-                        "sketch: /tmp has {} free ({}% used)",
-                        crate::metadata::format_size(info.available),
-                        info.used_pct,
-                    );
-                }
-            }
-            fs_utils::DiskCheck::Warning(_info, msg) => {
-                eprintln!("sketch: warning: {}", msg);
-            }
-            fs_utils::DiskCheck::Critical(_info, msg) => {
-                return Err(format!(
-                    "insufficient disk space: {}. Use 'sketch --clean' to free space.",
-                    msg,
-                ));
-            }
-        }
 
         let overlay = OverlaySession::new()
             .map_err(|e| format!("Failed to create session directories: {}", e))?;
@@ -280,12 +257,6 @@ impl Session {
                     process::exit(1);
                 }
 
-                // Set up session environment variables
-                let env_vars = fs_utils::setup_session_env(self.original_uid, self.original_gid);
-                for (key, val) in &env_vars {
-                    std::env::set_var(key, val);
-                }
-
                 // Set session identifiers for child processes to detect they're in a session
                 std::env::set_var("SKETCH_SESSION", "1");
                 std::env::set_var("SKETCH_SESSION_DIR", &self.overlay.session_dir);
@@ -296,23 +267,12 @@ impl Session {
                 for (key, val) in extra_env {
                     std::env::set_var(key, val);
                 }
-
-                // Update PS1 to indicate we're in a sketch session
-                if let Ok(ps1) = std::env::var("PS1") {
-                    std::env::set_var("PS1", format!("(sketch) {}", ps1));
-                } else {
-                    std::env::set_var("PS1", "(sketch) \\u@\\h:\\w\\$ ");
-                }
-
-                // Restore working directory
-                let _ = fs_utils::setup_working_directory(&self.original_cwd);
-
-                // Check device access and warn
-                if self.verbose {
-                    for warning in fs_utils::check_device_access() {
-                        eprintln!("sketch: {}", warning);
-                    }
-                }
+                
+                // Set the working directory inside the session to match the original cwd if possible
+                env::set_current_dir(self.original_cwd).unwrap_or_else(|_| {
+                    eprintln!("sketch: [child] warning: failed to set working directory, using /");
+                    env::set_current_dir("/").expect("Failed to set working directory to /");
+                });
 
                 let err = exec_command(cmd, args);
                 eprintln!("sketch: exec failed: {}", err);
