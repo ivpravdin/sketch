@@ -112,10 +112,6 @@ impl Session {
         }
         self.overlay.mount_additional_filesystems(self.verbose)?;
 
-        if self.verbose {
-            eprintln!("sketch: ensuring DNS resolution...");
-        }
-        self.overlay.ensure_dns_resolution()?;
 
         Ok(())
     }

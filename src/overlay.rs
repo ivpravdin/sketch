@@ -210,46 +210,6 @@ impl OverlaySession {
         Ok(())
     }
 
-    /// Ensure DNS resolution works inside the overlay.
-    ///
-    /// On many systems /etc/resolv.conf is a symlink into /run/systemd/resolve/,
-    /// which we handle by bind-mounting /run above. As a fallback, if the merged
-    /// resolv.conf is missing or empty, we copy the host's resolv.conf directly
-    /// into the overlay upper directory so the merged view always has it.
-    pub fn ensure_dns_resolution(&self) -> Result<(), String> {
-        let host_resolv = Path::new("/etc/resolv.conf");
-        let merged_resolv = self.merged_dir.join("etc/resolv.conf");
-
-        // If the merged resolv.conf is already readable and non-empty, DNS is fine
-        if merged_resolv.exists() {
-            if let Ok(contents) = fs::read_to_string(&merged_resolv) {
-                if !contents.trim().is_empty() {
-                    return Ok(());
-                }
-            }
-        }
-
-        // Copy the host resolv.conf into the upper layer
-        if host_resolv.exists() {
-            let upper_etc = self.upper_dir.join("etc");
-            let _ = fs::create_dir_all(&upper_etc);
-            let upper_resolv = upper_etc.join("resolv.conf");
-
-            // Read the real content (follow symlinks)
-            match fs::read_to_string(host_resolv) {
-                Ok(contents) => {
-                    fs::write(&upper_resolv, contents)
-                        .map_err(|e| format!("Failed to write resolv.conf to overlay: {}", e))?;
-                }
-                Err(e) => {
-                    return Err(format!("Failed to read host resolv.conf: {}", e));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn mount_additional_filesystems(&mut self, verbose: bool) -> Result<(), String> {
         // Filesystems to skip: virtual/pseudo filesystems
         let skip_fstypes = [
