@@ -224,7 +224,7 @@ Sketch is **safe for testing**, not for running **untrusted code**.
 
 ## Contributing
 
-Contributions welcome! See [contributing.md](docs/contributing.md) for development setup and guidelines.
+Contributions welcome! See [contributing.md](docs/contributing.md) for development setup and guidelines. We have a wishlist of features available in [todo.md](docs/todo.md).
 
 ## License
 
