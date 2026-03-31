@@ -7,27 +7,6 @@
 3. Build: `cargo build`
 4. Test: `cargo test`
 
-## Project Structure
-
-```
-sketch/
-├── Cargo.toml              # Dependencies and package metadata
-├── src/
-│   ├── main.rs             # Entry point, root check, command dispatch
-│   ├── cli.rs              # Argument parsing, help text
-│   ├── overlay.rs          # OverlayFS mount/unmount, namespace setup
-│   ├── session.rs          # Session lifecycle, fork/exec, signal handling
-│   ├── fs_utils.rs         # Filesystem utilities, environment setup
-│   └── package.rs          # Package manager detection and integration
-├── tests/
-│   ├── cli_tests.rs        # CLI argument parsing tests
-│   ├── overlay_tests.rs    # Overlay lifecycle tests
-│   ├── session_tests.rs    # Session management tests
-│   └── integration_tests.rs # End-to-end integration tests
-├── docs/                   # Documentation
-└── ARCHITECTURE.md         # Design decisions and rationale
-```
-
 ## Development
 
 ### Building
@@ -44,6 +23,8 @@ Testing requires root privileges since the core functionality uses OverlayFS:
 sudo cargo test
 ```
 
+Testing framework is a subject to change.
+
 ### Running Locally
 
 ```bash
@@ -52,11 +33,10 @@ cargo build && sudo ./target/release/sketch --verbose
 
 ## Guidelines
 
-- Keep dependencies minimal. Sketch is intentionally lightweight.
-- All overlay/mount code goes in `overlay.rs`. Session orchestration goes in `session.rs`. Filesystem helpers go in `fs_utils.rs`. Package manager logic goes in `package.rs`.
+- Keep dependencies minimal. Sketch is intentionally lightweight. It also prevents any security concerns.
+- All overlay/mount code goes in `overlay.rs`. Session orchestration goes in `session.rs`.
 - Error messages should be clear and actionable (e.g., suggest `sudo` when privilege is missing).
 - Safety is paramount. The host filesystem must never be modified during a session.
-- Test cleanup paths thoroughly — bugs in cleanup can leave orphaned mounts.
 
 ## Pull Requests
 

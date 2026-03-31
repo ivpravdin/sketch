@@ -53,7 +53,7 @@ The binary will be at `./target/release/sketch`.
 Copy the binary to a location in your PATH:
 
 ```bash
-sudo cp target/release/sketch /usr/local/bin/
+sudo install target/release/sketch /usr/local/bin/
 ```
 
 ## Verifying the Installation

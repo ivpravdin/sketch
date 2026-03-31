@@ -14,12 +14,12 @@ Hand-rolled argument parser (no external dependencies). Parses options (`--help`
 
 Manages the OverlayFS lifecycle:
 
-1. **`OverlaySession::new()`** — Creates temp directories under `/tmp/sketch-<UUID>/`:
+1. **`OverlaySession::new()`** — Creates temp directories under `/tmp/sketch-<ID>/`:
    - `upper/` — writable layer where all changes are stored
    - `work/` — OverlayFS internal working directory
    - `merged/` — mount point where the overlay is assembled
 
-2. **`setup_namespaces()`** — Creates a new mount namespace via `unshare(CLONE_NEWNS)` and marks all mounts as private to prevent propagation to the host.
+2. **`setup_namespaces()`** — Creates a new mount and UTS namespace via `unshare(CLONE_NEWNS | CLONE_NEWUTS)` and marks all mounts as private to prevent propagation to the host.
 
 3. **`mount_overlay()`** — Mounts the OverlayFS with `lowerdir=/` (host root, read-only) and `upperdir`/`workdir` pointing to the temp directories.
 
@@ -38,29 +38,8 @@ Orchestrates the session lifecycle:
 1. Creates an `OverlaySession`
 2. Calls `setup()` — namespaces, overlay mount, virtual FS mount, pivot root
 3. Forks the process
-4. **Child**: sets `SKETCH_SESSION=1`, updates `PS1`, then `execvp`s the shell/command
+4. **Child**: sets `SKETCH_SESSION=1`, updates hostname, executes command
 5. **Parent**: ignores signals (child receives them directly), waits for child to exit, then cleans up
-
-### Filesystem Utilities (`src/fs_utils.rs`)
-
-Helper functions for filesystem operations within sessions:
-
-- **`resolve_path()`** / **`read_symlink()`** — Path resolution and symlink handling
-- **`create_temp_dir()`** / **`create_temp_file()`** — Temporary file creation within the overlay
-- **`set_permissions()`** / **`file_info()`** — Permission management and metadata inspection
-- **`setup_working_directory()`** — Preserves the user's working directory inside the session, falling back to `$HOME` or `/`
-- **`setup_session_env()`** — Prepares environment variables for the session, setting `SKETCH_SESSION=1`, `SKETCH_ORIGINAL_UID`, `SKETCH_ORIGINAL_GID`, and preserving important host variables (`HOME`, `USER`, `SHELL`, `TERM`, `PATH`, etc.)
-- **`check_device_access()`** — Verifies essential devices (`/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/tty`) are accessible
-- **`copy_dir_recursive()`** — Recursive directory copy with permission preservation
-
-### Package Management (`src/package.rs`)
-
-Provides a unified interface for package management across Linux distributions:
-
-- **Auto-detection**: `detect_package_manager()` checks for known binaries (`apt-get`, `dnf`, `yum`, `pacman`, `zypper`, `apk`) and returns the appropriate variant
-- **Unified operations**: Each `PackageManager` variant generates correct arguments for install, remove, and update operations
-- **Cache management**: `clean_package_cache()` runs the appropriate cache cleanup command, and `cache_dirs()` returns distribution-specific cache paths
-- **Supported managers**: apt (Debian/Ubuntu), dnf (Fedora), yum (RHEL/CentOS), pacman (Arch), zypper (openSUSE), apk (Alpine)
 
 ### Entry Point (`src/main.rs`)
 
@@ -85,8 +64,8 @@ Checks for root privileges, parses CLI args, and dispatches to the appropriate s
 sketch invoked
   → check root privileges
   → parse CLI arguments
-  → create /tmp/sketch-<UUID>/{upper,work,merged}
-  → unshare(CLONE_NEWNS) — new mount namespace
+  → create /tmp/sketch-<ID>/{upper,work,merged}
+  → unshare(CLONE_NEWNS | CLONE_NEWUTS) — new mount and UTS namespace
   → mount overlay (lower=/, upper=tmp/upper) at tmp/merged
   → mount /proc, /sys, /dev inside merged
   → pivot_root to merged, detach old root
@@ -116,9 +95,9 @@ sketch/
 │   ├── main.rs             # Entry point, root check, command dispatch
 │   ├── cli.rs              # Argument parsing, help text
 │   ├── overlay.rs          # OverlayFS mount/unmount, namespace setup
+│   ├── metadata.rs          # Metadata management
 │   ├── session.rs          # Session lifecycle, fork/exec, signal handling
-│   ├── fs_utils.rs         # Filesystem utilities, environment setup
-│   └── package.rs          # Package manager detection and integration
+│   ├── utils.rs         # Helpful utility functions 
 ├── tests/
 │   ├── cli_tests.rs        # CLI argument parsing tests
 │   ├── overlay_tests.rs    # Overlay lifecycle tests

@@ -111,17 +111,6 @@ sudo sketch
 
 Package managers work normally inside sketch sessions. All installations, removals, and cache updates happen in the ephemeral overlay and are discarded on exit.
 
-Sketch auto-detects your system's package manager and supports:
-
-| Distribution | Package Manager |
-|---|---|
-| Debian / Ubuntu | apt |
-| Fedora | dnf |
-| RHEL / CentOS | yum |
-| Arch Linux | pacman |
-| openSUSE | zypper |
-| Alpine | apk |
-
 Example workflows:
 
 ```bash
