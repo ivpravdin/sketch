@@ -1,7 +1,7 @@
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::sethostname;
-use std::fs;
+use nix::unistd::{sethostname, gethostname};
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -76,6 +76,27 @@ impl OverlaySession {
         let hostname = format!("sketch-{}", self.session_id());
         sethostname(&hostname)
             .map_err(|e| format!("Failed to set hostname: {}", e))?;
+        Ok(())
+    }
+
+    pub fn add_hostname_entry(&self) -> Result<(), String> {
+        let hosts_path = self.merged_dir.join("etc/hosts");
+        let hostname = gethostname()
+            .map_err(|e| format!("Failed to get hostname: {}", e))?
+            .into_string()
+            .map_err(|_| "Hostname wasn't valid UTF-8".to_string())?;
+
+        let entry = format!("127.0.0.1\t{}\n", hostname);
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&hosts_path)
+            .map_err(|e| format!("Failed to open hosts file: {}", e))?;
+
+        io::Write::write_all(&mut file, entry.as_bytes())
+            .map_err(|e| format!("Failed to write hostname entry: {}", e))?;
+
         Ok(())
     }
 

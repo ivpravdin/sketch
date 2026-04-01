@@ -112,6 +112,11 @@ impl Session {
         }
         self.overlay.mount_additional_filesystems(self.verbose)?;
 
+        if self.verbose {
+            eprintln!("sketch: adding hostname entry to /etc/hosts...");
+        }
+        self.overlay.add_hostname_entry()?;
+
 
         Ok(())
     }
