@@ -259,7 +259,7 @@ impl OverlaySession {
         ];
 
         // Mount prefixes to skip
-        let skip_prefixes = ["/proc", "/sys", "/dev", "/run", "/tmp"];
+        let skip_prefixes = ["/proc", "/sys", "/dev", "/run", "/tmp", "/boot"];
 
         // Read /proc/self/mounts
         let mounts_content = fs::read_to_string("/proc/self/mounts")
