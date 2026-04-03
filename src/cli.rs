@@ -16,7 +16,6 @@ pub enum Command {
 
 #[derive(Debug, Default)]
 pub struct RunOptions {
-    pub name: Option<String>,
     pub timeout: Option<u64>,
     pub env_vars: Vec<(String, String)>,
 }
@@ -30,11 +29,18 @@ pub struct ListOptions {
 pub struct Config {
     pub command: Command,
     pub verbose: bool,
+    pub name: Option<String>,
+    pub x11: bool,
 }
 
 pub fn parse_args() -> Config {
     let args: Vec<String> = env::args().skip(1).collect();
-    let mut verbose = false;
+    let mut config = Config {
+        command: Command::Shell,
+        verbose: false,
+        name: None,
+        x11: false,
+    };
     let mut positional = Vec::new();
 
     let mut i = 0;
@@ -48,16 +54,25 @@ pub fn parse_args() -> Config {
                 println!("sketch {}", VERSION);
                 process::exit(0);
             }
-            "--verbose" => verbose = true,
+            "--verbose" => config.verbose = true,
             "--clean" => {
-                return Config {
-                    command: Command::Clean,
-                    verbose,
-                };
+                config.command = Command::Clean;
+                return config;
             }
             "--" => {
                 positional.extend_from_slice(&args[i + 1..]);
                 break;
+            }
+            "--name" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("sketch: '--name' requires a value");
+                    process::exit(1);
+                }
+                config.name = Some(args[i].clone());
+            }
+            "--x11" => {
+                config.x11 = true;
             }
             arg if arg.starts_with('-') && positional.is_empty() => {
                 eprintln!("sketch: unknown option '{}'", arg);
@@ -71,34 +86,40 @@ pub fn parse_args() -> Config {
         i += 1;
     }
 
-    let command = if positional.is_empty() {
-        Command::Shell
-    } else {
+    if !positional.is_empty() {
         match positional[0].as_str() {
-            "shell" => Command::Shell,
+            "shell" => config.command = Command::Shell,
             "exec" => {
                 if positional.len() < 2 {
                     eprintln!("sketch: 'exec' requires a command");
                     process::exit(1);
                 }
-                Command::Exec(positional[1..].to_vec())
+                config.command = Command::Exec(positional[1..].to_vec());
             }
-            "run" => parse_run_command(&positional[1..]),
+            "run" => {
+                config.command = parse_run_command(&positional[1..]);
+            }
             "commit" => {
                 if positional.len() < 2 {
                     eprintln!("sketch: 'commit' requires at least one file path");
                     eprintln!("Usage: sketch commit [FILE...]");
                     process::exit(1);
                 }
-                Command::Commit(positional[1..].to_vec())
+                config.command = Command::Commit(positional[1..].to_vec());
             }
-            "list" | "ls" => parse_list_command(&positional[1..]),
-            "status" => Command::Status,
-            _ => Command::Exec(positional),
-        }
+            "list" | "ls" => {
+                config.command = parse_list_command(&positional[1..]);
+            }
+            "status" => {
+                config.command = Command::Status;
+            }
+            _ => {
+                config.command = Command::Exec(positional);
+            }
+        };
     };
 
-    Config { command, verbose }
+    config
 }
 
 fn parse_run_command(args: &[String]) -> Command {
@@ -116,14 +137,6 @@ fn parse_run_command(args: &[String]) -> Command {
         match args[i].as_str() {
             "--" => {
                 past_separator = true;
-            }
-            "--name" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("sketch: '--name' requires a value");
-                    process::exit(1);
-                }
-                options.name = Some(args[i].clone());
             }
             "--timeout" => {
                 i += 1;

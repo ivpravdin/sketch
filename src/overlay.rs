@@ -1,6 +1,7 @@
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
 use nix::unistd::{sethostname, gethostname};
+use core::result::Result;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -376,6 +377,23 @@ impl OverlaySession {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    pub fn bind_x11_sock(&self) -> Result<(), String> {
+        let x11_sock = "/tmp/.X11-unix";
+        let x11_sock_merged = self.merged_dir.join(x11_sock.trim_start_matches("/"));
+        fs::create_dir_all(&x11_sock_merged)
+            .map_err(|e| format!("Failed to create X11 socket dir in merged: {}", e))?;
+
+        mount(
+            Some("/tmp/.X11-unix"),
+            &x11_sock_merged,
+            None::<&str>,
+            MsFlags::MS_BIND | MsFlags::MS_REC,
+            None::<&str>,
+        ).map_err(|e| format!("Failed to mount X11 socker: {}", e))?;
 
         Ok(())
     }

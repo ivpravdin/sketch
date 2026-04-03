@@ -11,7 +11,7 @@ fn main() {
 
     // Check privileges: need root for session commands
     if !nix::unistd::geteuid().is_root() {
-        match config.command {
+        match &config.command {
             cli::Command::Clean | cli::Command::List(_) | cli::Command::Status => {}
             _ => {
                 eprintln!("sketch: must be run as root (try: sudo sketch)");
@@ -20,9 +20,9 @@ fn main() {
         }
     }
 
-    match config.command {
+    match &config.command {
         cli::Command::Shell => {
-            let session = match session::Session::new(config.verbose) {
+            let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("sketch: {}", e);
@@ -38,7 +38,7 @@ fn main() {
             }
         }
         cli::Command::Exec(args) => {
-            let session = match session::Session::new(config.verbose) {
+            let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("sketch: {}", e);
@@ -54,14 +54,14 @@ fn main() {
             }
         }
         cli::Command::Run(args, options) => {
-            let session = match session::Session::new(config.verbose) {
+            let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("sketch: {}", e);
                     process::exit(1);
                 }
             };
-            match session.start_run(&args, &options) {
+            match session.start_run() {
                 Ok(code) => process::exit(code),
                 Err(e) => {
                     eprintln!("sketch: {}", e);

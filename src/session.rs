@@ -4,21 +4,21 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
 use std::{env, process};
 
-use crate::cli::RunOptions;
+use crate::cli::{Config, Command, RunOptions};
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
 
-pub struct Session {
+pub struct Session<'a> {
     overlay: OverlaySession,
     original_cwd: std::path::PathBuf,
     original_uid: u32,
     original_gid: u32,
-    verbose: bool,
+    config: &'a Config,
 }
 
-impl Session {
+impl<'a> Session<'a> {
 
-    pub fn new(verbose: bool) -> Result<Self, String> {
+    pub fn new(config: &'a Config) -> Result<Self, String> {
 
         let overlay = OverlaySession::new()
             .map_err(|e| format!("Failed to create session directories: {}", e))?;
@@ -27,7 +27,7 @@ impl Session {
         let original_uid = nix::unistd::getuid().as_raw();
         let original_gid = nix::unistd::getgid().as_raw();
 
-        if verbose {
+        if config.verbose {
             eprintln!("sketch: session dir: {}", overlay.session_dir.display());
         }
 
@@ -36,15 +36,15 @@ impl Session {
             original_cwd,
             original_uid,
             original_gid,
-            verbose,
+            config,
         })
     }
 
     pub fn start_shell(mut self) -> Result<i32, String> {
-        self.write_metadata(None, "shell")?;
+        self.write_metadata(self.config.name.as_ref(), "shell")?;
         self.setup()?;
         let shell = detect_shell();
-        self.run_command(&shell, &[], None, &[])
+        self.run_command()
     }
 
     pub fn start_exec(mut self, args: &[String]) -> Result<i32, String> {
@@ -55,26 +55,27 @@ impl Session {
         self.setup()?;
         let cmd = &args[0];
         let cmd_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
-        self.run_command(cmd, &cmd_args, None, &[])
+        self.run_command()
     }
 
-    pub fn start_run(mut self, args: &[String], options: &RunOptions) -> Result<i32, String> {
-        if args.is_empty() {
-            return Err("No command specified".into());
-        }
-        let cmd_str = format!("run {}", args.join(" "));
-        self.write_metadata(options.name.clone(), &cmd_str)?;
+    pub fn start_run(mut self) -> Result<i32, String> {
         self.setup()?;
-        let cmd = &args[0];
-        let cmd_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
-        self.run_command(cmd, &cmd_args, options.timeout, &options.env_vars)
+
+        let Command::Run(args, run_opts) = &self.config.command else {
+            return Err("Invalid command type for start_run".into());
+        };
+
+        let cmd_str = format!("run {}", args.join(" "));
+        self.write_metadata(self.config.name.as_ref(), &cmd_str)?;
+
+        self.run_command()
     }
 
     /// Write session metadata to disk for `sketch list` to discover.
-    fn write_metadata(&self, name: Option<String>, command: &str) -> Result<(), String> {
+    fn write_metadata(&self, name: Option<&String>, command: &str) -> Result<(), String> {
         let meta = SessionMetadata::new(
             &self.overlay.session_id,
-            name,
+            name.map(|s| s.clone()),
             command,
             &self.overlay.session_dir,
         );
@@ -82,41 +83,47 @@ impl Session {
     }
 
     fn setup(&mut self) -> Result<(), String> {
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: creating mount namespace...");
         }
         self.overlay.setup_namespaces()?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: making root mount private...");
         }
         self.overlay.make_mount_private()?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: chaning hostname...");
         }
         self.overlay.change_hostname()?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: mounting overlay filesystem...");
         }
         self.overlay.mount_overlay()?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: mounting virtual filesystems...");
         }
         self.overlay.mount_virtual_filesystems()?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: mounting additional partitions...");
         }
-        self.overlay.mount_additional_filesystems(self.verbose)?;
+        self.overlay.mount_additional_filesystems(self.config.verbose)?;
 
-        if self.verbose {
+        if self.config.verbose {
             eprintln!("sketch: adding hostname entry to /etc/hosts...");
         }
         self.overlay.add_hostname_entry()?;
 
+        if self.config.x11 {
+            if self.config.verbose {
+                eprintln!("sketch: binding X11 socket...");
+            }
+            self.overlay.bind_x11_sock()?;
+        }
 
         Ok(())
     }
@@ -129,7 +136,7 @@ impl Session {
 
         // Check if a commit list exists
         if !commit_list_in_upper.exists() {
-            if self.verbose {
+            if self.config.verbose {
                 eprintln!("sketch: no marked files to commit");
             }
             return;
@@ -190,7 +197,7 @@ impl Session {
                     if upper_file.exists() {
                         match std::fs::copy(&upper_file, file_path) {
                             Ok(_) => {
-                                if self.verbose {
+                                if self.config.verbose {
                                     eprintln!("sketch: committed {}", file_path);
                                 }
                                 committed_count += 1;
@@ -208,7 +215,7 @@ impl Session {
                     }
                 }
 
-                if self.verbose {
+                if self.config.verbose {
                     if committed_count > 0 {
                         eprintln!("sketch: committed {} file(s)", committed_count);
                     }
@@ -223,16 +230,33 @@ impl Session {
         }
     }
 
-    fn run_command(
-        mut self,
-        cmd: &str,
-        args: &[&str],
-        timeout: Option<u64>,
-        extra_env: &[(String, String)],
-    ) -> Result<i32, String> {
-        if self.verbose {
-            eprintln!("sketch: spawning: {} {}", cmd, args.join(" "));
-            if let Some(t) = timeout {
+    fn run_command(mut self) -> Result<i32, String> {
+        let (cmd, args, timeout, extra_env) = match &self.config.command {
+            Command::Shell => {
+                let shell = detect_shell();
+                (shell, vec![], None, vec![])
+            }
+            Command::Run(args, run_opts) => {
+                let cmd = args[0].clone();
+                let cmd_args: Vec<&str> = args.get(1..).unwrap_or(&[]).iter().map(|s| s.as_str()).collect();
+                let extra_env = run_opts
+                    .env_vars
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                (cmd, cmd_args, run_opts.timeout.clone(), extra_env)
+            }
+            Command::Exec(args) => {
+                let cmd = args[0].clone();
+                let cmd_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
+                (cmd, cmd_args, None, vec![])
+            }
+            _ => return Err("Invalid command type for run_command".into()),
+        };
+
+        if self.config.verbose {
+            eprintln!("sketch: spawning: {} {}", cmd, args.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join(" "));
+            if let Some(t) = &timeout {
                 eprintln!("sketch: timeout: {}s", t);
             }
         }
@@ -241,7 +265,7 @@ impl Session {
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
                 // Child process: create its own mount namespace (inherits parent's mounts)
-                if self.verbose {
+                if self.config.verbose {
                     eprintln!("sketch: [child] creating isolated mount namespace...");
                 }
                 if let Err(e) = unshare(CloneFlags::CLONE_NEWNS) {
@@ -249,7 +273,7 @@ impl Session {
                     process::exit(1);
                 }
 
-                if self.verbose {
+                if self.config.verbose {
                     eprintln!("sketch: [child] changing root...");
                 }
 
@@ -275,7 +299,8 @@ impl Session {
                     env::set_current_dir("/").expect("Failed to set working directory to /");
                 });
 
-                let err = exec_command(cmd, args);
+                let args_str: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
+                let err = exec_command(&cmd, &args_str);
                 eprintln!("sketch: exec failed: {}", err);
                 process::exit(127);
             }
