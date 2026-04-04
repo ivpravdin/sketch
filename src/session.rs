@@ -20,7 +20,7 @@ impl<'a> Session<'a> {
 
     pub fn new(config: &'a Config) -> Result<Self, String> {
 
-        let overlay = OverlaySession::new()
+        let overlay = OverlaySession::new(&config)
             .map_err(|e| format!("Failed to create session directories: {}", e))?;
 
         let original_cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
