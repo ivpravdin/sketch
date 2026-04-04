@@ -7,6 +7,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::utils::{fnv1a_hash, session_id};
+use crate::cli::Config;
 
 pub struct OverlaySession {
     pub session_id: String,
@@ -28,9 +29,26 @@ pub fn mount_name_from_path(mountpoint: &str) -> String {
 }
 
 impl OverlaySession {
-    pub fn new() -> io::Result<Self> {
-        let session_id = session_id().to_string();
+    pub fn new(config: &Config) -> io::Result<Self> {
+        let session_id = if config.name.is_some() {
+            let name = config.name.as_ref().unwrap().replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+            if name.is_empty() {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty name"));
+            } else {
+                name
+            }
+        } else {
+            session_id()
+        };
+
         let session_dir = PathBuf::from(format!("/tmp/sketch-{}", session_id));
+
+        if session_dir.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("Session directory already exists: {}", session_dir.display()),
+            ));
+        }
 
         let upper_dir = session_dir.join("upper");
         let work_dir = session_dir.join("work");
