@@ -6,7 +6,7 @@ All sketch commands must be run with sudo because OverlayFS mounting, mount name
 
 ```bash
 sudo sketch                    # Interactive shell
-sudo sketch exec ./script.sh   # Run a command
+sudo sketch run ./script.sh   # Run a command
 sudo sketch --clean            # Clean orphaned sessions
 ```
 
@@ -27,7 +27,7 @@ Type `exit` or press `Ctrl-D` to end the session. All changes are discarded.
 ### Run a Single Command
 
 ```bash
-sudo sketch exec <command> [args...]
+sudo sketch run <command> [args...]
 ```
 
 Runs a command inside an ephemeral environment and exits when it completes.
@@ -36,13 +36,13 @@ Examples:
 
 ```bash
 # Install and test a package without affecting your system
-sudo sketch exec apt install -y nginx
+sudo sketch run apt install -y nginx
 
 # Run a build in a clean environment
-sudo sketch exec make -C /path/to/project
+sudo sketch run make -C /path/to/project
 
 # Test a destructive script safely
-sudo sketch exec bash risky-script.sh
+sudo sketch run bash risky-script.sh
 ```
 
 ### Clean Up Orphaned Sessions
@@ -66,7 +66,6 @@ OPTIONS:
 
 COMMANDS:
     shell            Start interactive shell session (default)
-    exec <command>   Execute a single command in an ephemeral session
 ```
 
 ## Common Workflows
@@ -96,7 +95,7 @@ sudo sketch
 ### Debug a Build in a Clean Environment
 
 ```bash
-sudo sketch exec bash -c "cd /home/user/project && make clean && make"
+sudo sketch run bash -c "cd /home/user/project && make clean && make"
 ```
 
 ### Experiment with System Files

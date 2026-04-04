@@ -4,7 +4,7 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
 use std::{env, process};
 
-use crate::cli::{Config, Command, RunOptions};
+use crate::cli::{Config, Command};
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
 
@@ -43,25 +43,13 @@ impl<'a> Session<'a> {
     pub fn start_shell(mut self) -> Result<i32, String> {
         self.write_metadata(self.config.name.as_ref(), "shell")?;
         self.setup()?;
-        let shell = detect_shell();
-        self.run_command()
-    }
-
-    pub fn start_exec(mut self, args: &[String]) -> Result<i32, String> {
-        if args.is_empty() {
-            return Err("No command specified".into());
-        }
-        self.write_metadata(None, &format!("exec {}", args.join(" ")))?;
-        self.setup()?;
-        let cmd = &args[0];
-        let cmd_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
         self.run_command()
     }
 
     pub fn start_run(mut self) -> Result<i32, String> {
         self.setup()?;
 
-        let Command::Run(args, run_opts) = &self.config.command else {
+        let Command::Run(args, _) = &self.config.command else {
             return Err("Invalid command type for start_run".into());
         };
 
@@ -245,11 +233,6 @@ impl<'a> Session<'a> {
                     .map(|(k, v)| (k.as_str(), v.as_str()))
                     .collect();
                 (cmd, cmd_args, run_opts.timeout.clone(), extra_env)
-            }
-            Command::Exec(args) => {
-                let cmd = args[0].clone();
-                let cmd_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
-                (cmd, cmd_args, None, vec![])
             }
             _ => return Err("Invalid command type for run_command".into()),
         };

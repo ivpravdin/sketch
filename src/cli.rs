@@ -6,7 +6,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 pub enum Command {
     Shell,
-    Exec(Vec<String>),
     Run(Vec<String>, RunOptions),
     Commit(Vec<String>),
     List(ListOptions),
@@ -89,13 +88,6 @@ pub fn parse_args() -> Config {
     if !positional.is_empty() {
         match positional[0].as_str() {
             "shell" => config.command = Command::Shell,
-            "exec" => {
-                if positional.len() < 2 {
-                    eprintln!("sketch: 'exec' requires a command");
-                    process::exit(1);
-                }
-                config.command = Command::Exec(positional[1..].to_vec());
-            }
             "run" => {
                 config.command = parse_run_command(&positional[1..]);
             }
@@ -114,7 +106,9 @@ pub fn parse_args() -> Config {
                 config.command = Command::Status;
             }
             _ => {
-                config.command = Command::Exec(positional);
+                eprintln!("sketch: unknown command '{}'", positional[0]);
+                eprintln!("Try 'sketch --help' for more information.");
+                process::exit(1);
             }
         };
     };
@@ -233,7 +227,6 @@ OPTIONS:
 
 COMMANDS:
     shell                  Start interactive shell session (default)
-    exec <command>         Execute a command in an ephemeral session
     run [OPTIONS] -- CMD   Run a command non-interactively (for scripting/CI)
     commit [FILE...]       Persist files to base filesystem (inside session only)
     list [--json]          Show active sessions

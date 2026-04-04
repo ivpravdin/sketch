@@ -6,7 +6,7 @@ Sketch lets you test changes, run commands, and experiment in a **completely iso
 
 ```bash
 # Try a dangerous command safely
-sketch exec rm -rf /var/log/*
+sketch run rm -rf /var/log/*
 # ✓ No effect on your actual system!
 
 # Test package installation

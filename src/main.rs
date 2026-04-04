@@ -37,23 +37,7 @@ fn main() {
                 }
             }
         }
-        cli::Command::Exec(args) => {
-            let session = match session::Session::new(&config) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("sketch: {}", e);
-                    process::exit(1);
-                }
-            };
-            match session.start_exec(&args) {
-                Ok(code) => process::exit(code),
-                Err(e) => {
-                    eprintln!("sketch: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-        cli::Command::Run(args, options) => {
+        cli::Command::Run(_, _) => {
             let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
