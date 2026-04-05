@@ -11,11 +11,10 @@ This is a list of current tasks for sketch. Any contribution is welcome!
 - [ ] Setup github workflows for testing
 - [ ] Update metadata (need to include all overlays)
 - [ ] Support `attach` command to restore disconnected session
-
-### In Progress
-
-None
+- [ ] Change bash interactive session to login session
+- [ ] Review name config variable
 
 ### Done ✓
 
 - [x] Commit functionality (`sketch commit file.txt` withing an active session)
+- [x] Add `--x11` option to bind `/tmp/.X11-unix`

@@ -42,30 +42,47 @@ cargo build --release
 sudo install target/release/sketch /usr/local/bin/
 ```
 
-### Basic Usage
+## Usage & Examples
+
+### Interactive Shell
+
+Start an interactive session and make changes, optionally committing specific files back to the host:
 
 ```bash
-# Interactive session (just like bash)
-sketch
+sudo sketch shell
+(sketch) $ vim /etc/app.conf
+(sketch) $ apt install experimental-package
+(sketch) $ # Test everything out...
+(sketch) $ sketch commit /etc/app.conf
+(sketch) $ exit
+# Result: Only /etc/app.conf persisted; package not installed on host
+```
 
-# Run a command
-sketch exec apt update
-sketch exec pip install package
+### Non-Interactive (Scripts & CI)
 
-# Non-interactive (for scripts/CI)
-sketch run -- ./test-script.sh
+Run a command or script in an isolated session:
 
-# List active sessions
-sketch list
+```bash
+sudo sketch run -- ./test-script.sh
+sudo sketch run --timeout 60 -- npm test
+sudo sketch run --name "my-task" -- bash -c "apt update && apt install pkg"
+```
 
-# Cleanup orphaned sessions
-sketch --clean
+### Other Useful Commands
+
+```bash
+sketch list              # Show active sessions
+sketch --clean           # Cleanup orphaned overlay mounts
 ```
 
 ## Documentation
 
 - **[User Guide](docs/usage.md)** — How to use Sketch
 - **[Architecture](docs/architecture.md)** — How it works internally
+- **[Installation](docs/installation.md)** — System requirements and setup
+- **[Safety](docs/safety.md)** — Isolation guarantees and limitations
+- **[Using LLMs](docs/llm_usage.md)** — Tips for running LLMs inside sessions
+- **[Troubleshooting](docs/troubleshooting.md)** — Common errors and fixes
 - **[Contributing](docs/contributing.md)** — Development guide
 
 ## How It Works
@@ -80,63 +97,6 @@ Sketch uses Linux **OverlayFS** and **namespaces** to create an isolated filesys
 
 For details, see [docs/architecture.md](docs/architecture.md).
 
-## Use Cases
-
-### Development & Testing
-
-```bash
-sketch shell
-(sketch) # make changes, compile, test
-(sketch) $ ./build.sh
-(sketch) $ ./run-tests.sh
-(sketch) $ sketch commit Makefile  # Keep just the Makefile changes
-(sketch) $ exit
-```
-
-### Temporary files
-
-```bash
-# Test configuration changes
-sketch shell
-(sketch) $ vim /home/user/test.c
-(sketch) $ gcc test.c && ./a.out
-(sketch) $ exit 
-```
-
-### Package Testing
-
-```bash
-# Try a package without installing it
-sketch shell
-(sketch) $ apt install experimental-package
-(sketch) $ experimental-package
-(sketch) $ exit
-# experimental-package is not installed on your host
-# Does not pollute your system
-```
-
-
-## Commit Command Quick Reference
-
-The `sketch commit` command lets you **selectively persist files** while keeping everything else isolated:
-
-```bash
-sketch shell
-(sketch) $ # Make changes, install packages, edit configs
-(sketch) $ vim /etc/app.conf
-(sketch) $ npm install package  # Only in session
-(sketch) $ sketch commit /etc/app.conf  # Keep only this file
-(sketch) $ exit
-# Result: /etc/app.conf persisted, npm package not installed
-```
-
-**Common usage:**
-```bash
-sketch commit /etc/config.conf                    # Single file
-sketch commit file1 file2 file3                  # Multiple files
-sketch commit /etc/nginx/*.conf                  # Glob patterns
-```
-
 ## Requirements
 
 - **Linux** with OverlayFS support (Linux 3.18+, most modern kernels)
@@ -147,45 +107,6 @@ Check compatibility:
 
 ```bash
 sketch status
-```
-
-## Examples
-
-### Safe Destructive Testing
-
-```bash
-sketch exec rm -rf /etc/*
-# Completely safe! Host /etc unchanged.
-```
-
-### Configuration Testing
-
-```bash
-sketch shell
-(sketch) $ cp /etc/hosts /etc/hosts.test
-(sketch) $ vim /etc/hosts.test
-(sketch) $ cat /etc/hosts.test | your-app
-(sketch) $ exit
-```
-
-### Experiment With Your Shell
-
-```bash
-sketch shell
-(sketch) $ vim ~/.bashrc
-(sketch) $ # Test bashrc changes...
-(sketch) $ sketch commit ~/.bashrc  # Keep the changes
-(sketch) $ exit
-```
-
-### CI/CD Integration
-
-```bash
-# In .github/workflows/test.yml
-- name: Run tests
-  run: |
-    sketch run --timeout 600 --name "unit-tests" -- \
-      bash -c "npm install && npm test"
 ```
 
 ## Performance
@@ -210,17 +131,9 @@ sketch shell
 
 Sketch is **safe for testing**, not for running **untrusted code**.
 
-## Status
+## What's Next
 
-**v0.1.0** — Pre-release with core features:
-- ✅ Overlay filesystem isolation
-- ✅ Mount namespace isolation
-- ✅ User namespace support (non-root)
-- ✅ File commitment feature
-- ✅ Session resumption
-- ✅ Package manager detection
-- ✅ DNS resolution
-- 🚧 Additional features planned
+See [docs/todo.md](docs/todo.md) for planned features and improvements.
 
 ## Contributing
 
