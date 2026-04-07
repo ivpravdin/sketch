@@ -221,8 +221,8 @@ impl<'a> Session<'a> {
     fn run_command(mut self) -> Result<i32, String> {
         let (cmd, args, timeout, extra_env) = match &self.config.command {
             Command::Shell => {
-                let shell = detect_shell();
-                (shell, vec![], None, vec![])
+                // Empty cmd; runuser -l will detect the shell from /etc/passwd
+                ("".into(), vec![], None, vec![])
             }
             Command::Run(args, run_opts) => {
                 let cmd = args[0].clone();
@@ -282,8 +282,35 @@ impl<'a> Session<'a> {
                     env::set_current_dir("/").expect("Failed to set working directory to /");
                 });
 
+                // Determine which user to run as
+                let target_username = if self.config.as_root {
+                    "root".to_string()
+                } else {
+                    if self.config.verbose {
+                        eprintln!("sketch: [child] dropping privileges to UID={}", self.original_uid);
+                    }
+                    let sudo_uid = env::var("SUDO_UID")
+                        .map_err(|_| "SUDO_UID not set".to_string())
+                        .and_then(|uid_str| {
+                            uid_str.parse::<u32>()
+                                .map_err(|_| format!("Invalid SUDO_UID '{}'", uid_str))
+                        });
+
+                    match sudo_uid {
+                        Ok(_target_uid) => {
+                            // Get username from SUDO_USER or use uid as fallback
+                            env::var("SUDO_USER")
+                                .unwrap_or_else(|_| self.original_uid.to_string())
+                        }
+                        Err(e) => {
+                            eprintln!("sketch: [child] failed to get user info: {}", e);
+                            process::exit(1);
+                        }
+                    }
+                };
+
                 let args_str: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
-                let err = exec_command(&cmd, &args_str);
+                let err = exec_with_runuser(&target_username, &cmd, &args_str);
                 eprintln!("sketch: exec failed: {}", err);
                 process::exit(127);
             }
@@ -306,21 +333,39 @@ impl<'a> Session<'a> {
     }
 }
 
-fn detect_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
-}
-
-fn exec_command(cmd: &str, args: &[&str]) -> nix::Error {
+fn exec_with_runuser(username: &str, cmd: &str, args: &[&str]) -> nix::Error {
     use std::ffi::CString;
 
-    let c_cmd = CString::new(cmd).expect("Invalid command string");
-    let mut c_args: Vec<CString> = vec![c_cmd.clone()];
-    for arg in args {
-        c_args.push(CString::new(*arg).expect("Invalid argument string"));
+    let mut runuser_args = vec![
+        CString::new("runuser").expect("Invalid command string"),
+        CString::new("--pty").expect("Invalid command string"),
+    ];
+
+    // Preserve sketch environment variables
+    runuser_args.push(CString::new("-w").expect("Invalid command string"));
+    runuser_args.push(CString::new("SKETCH_SESSION,SKETCH_SESSION_DIR,SKETCH_ORIGINAL_UID,SKETCH_ORIGINAL_GID").expect("Invalid command string"));
+
+    runuser_args.push(CString::new(username).expect("Invalid command string"));
+
+    runuser_args.push(CString::new("-l").expect("Invalid command string"));
+
+    // For commands: runuser <user> -c "<cmd> <args>"
+    if !cmd.is_empty() {
+        runuser_args.push(CString::new("-c").expect("Invalid command string"));
+
+        let mut cmd_str = cmd.to_string();
+        for arg in args {
+            cmd_str.push(' ');
+            cmd_str.push_str(arg);
+        }
+
+        runuser_args.push(CString::new(cmd_str).expect("Invalid command string"));
     }
 
-    nix::unistd::execvp(&c_cmd, &c_args).unwrap_err()
+    nix::unistd::execvp(&runuser_args[0], &runuser_args).unwrap_err()
 }
+
+
 
 fn wait_for_child(pid: Pid, timeout: Option<u64>) -> i32 {
     // Forward common signals to child

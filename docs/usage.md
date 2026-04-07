@@ -59,13 +59,23 @@ sudo sketch --clean
 sketch [OPTIONS] [COMMAND]
 
 OPTIONS:
-    -h, --help       Show help message
+    -h, --help       Show this help message
     -v, --version    Show version
-    --verbose        Enable verbose output (shows mount operations)
+    --verbose        Enable verbose output
     --clean          Clean up orphaned overlay mounts
+    --as-root        Run session with root privileges (default is to switch to a non-root user)
 
 COMMANDS:
-    shell            Start interactive shell session (default)
+    shell                  Start interactive shell session (default)
+    run [OPTIONS] -- CMD   Run a command non-interactively (for scripting/CI)
+    commit [FILE...]       Persist files to base filesystem (inside session only)
+    list [--json]          Show active sessions
+    status                 Show system information and diagnostics
+
+RUN OPTIONS:
+    --name NAME            Label the session for identification
+    --timeout SECONDS      Kill session after timeout
+    -e, --env KEY=VALUE    Set environment variable (repeatable)
 ```
 
 ## Common Workflows
