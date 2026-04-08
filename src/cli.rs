@@ -30,6 +30,7 @@ pub struct Config {
     pub verbose: bool,
     pub name: Option<String>,
     pub x11: bool,
+    pub as_root: bool,
 }
 
 pub fn parse_args() -> Config {
@@ -39,6 +40,7 @@ pub fn parse_args() -> Config {
         verbose: false,
         name: None,
         x11: false,
+        as_root: false,
     };
     let mut positional = Vec::new();
 
@@ -72,6 +74,9 @@ pub fn parse_args() -> Config {
             }
             "--x11" => {
                 config.x11 = true;
+            }
+            "--as-root" => {
+                config.as_root = true;
             }
             arg if arg.starts_with('-') && positional.is_empty() => {
                 eprintln!("sketch: unknown option '{}'", arg);
@@ -224,6 +229,7 @@ OPTIONS:
     -v, --version    Show version
     --verbose        Enable verbose output
     --clean          Clean up orphaned overlay mounts
+    --as-root        Run session with root privileges (default is to switch to a non-root user)
 
 COMMANDS:
     shell                  Start interactive shell session (default)
