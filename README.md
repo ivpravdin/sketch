@@ -42,6 +42,10 @@ cargo build --release
 sudo install target/release/sketch /usr/local/bin/
 ```
 
+## Demo
+
+<p align="center"><a href="https://asciinema.org/a/mjFbMWs08LFKKj15"><img src="https://asciinema.org/a/mjFbMWs08LFKKj15.svg" width="572px" height="412px"/></a></p>
+
 ## Usage & Examples
 
 ### Interactive Shell
