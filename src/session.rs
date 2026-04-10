@@ -2,7 +2,9 @@ use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
+use std::os::linux::fs::MetadataExt;
 use std::{env, process};
+use std::io::Write;
 
 use crate::cli::{Config, Command};
 use crate::metadata::SessionMetadata;
@@ -120,7 +122,7 @@ impl<'a> Session<'a> {
     fn commit_marked_files(&self) {
         // The commit list is written inside the session (at /var/.sketch-commit)
         // which goes into the overlay upper directory
-        let commit_list_in_upper = self.overlay.upper_dir.join("var/.sketch-commit");
+        let commit_list_in_upper = self.overlay.upper_dir.join("tmp/.sketch-commit");
 
         // Check if a commit list exists
         if !commit_list_in_upper.exists() {
@@ -183,6 +185,15 @@ impl<'a> Session<'a> {
 
                     // Check if the file exists in the overlay
                     if upper_file.exists() {
+                        let metadata = match std::fs::metadata(&upper_file) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                eprintln!("sketch: warning: failed to get metadata for {}: {}", upper_file.display(), e);
+                                missing_count += 1;
+                                continue;
+                            }
+                        };
+
                         match std::fs::copy(&upper_file, file_path) {
                             Ok(_) => {
                                 if self.config.verbose {
@@ -192,6 +203,13 @@ impl<'a> Session<'a> {
                             }
                             Err(e) => {
                                 eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
+                            }
+                        }
+
+                        match nix::unistd::chown(file_path, Some(nix::unistd::Uid::from_raw(metadata.st_uid())), Some(nix::unistd::Gid::from_raw(metadata.st_gid()))) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("sketch: warning: failed to set ownership for {}: {}", file_path, e);
                             }
                         }
                     } else {
@@ -265,11 +283,27 @@ impl<'a> Session<'a> {
                     process::exit(1);
                 }
 
+                let session_file_path = "/var/.sketch-session";
+
+                if self.config.verbose {
+                    eprintln!("sketch: [child] writing session metadata to {}", session_file_path);
+                }
+
                 // Set session identifiers for child processes to detect they're in a session
-                std::env::set_var("SKETCH_SESSION", "1");
-                std::env::set_var("SKETCH_SESSION_DIR", &self.overlay.session_dir);
-                std::env::set_var("SKETCH_ORIGINAL_UID", self.original_uid.to_string());
-                std::env::set_var("SKETCH_ORIGINAL_GID", self.original_gid.to_string());
+                let mut session_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(&session_file_path)
+                    .map_err(|e| format!("Failed to open sketch session file: {}", e))?;
+
+                writeln!(
+                    session_file,
+                    "{}\n{}\n{}\n{}",
+                    self.overlay.session_id,
+                    self.original_uid,
+                    self.original_gid,
+                    self.config.name.as_deref().unwrap_or("")
+                ).map_err(|e| format!("Failed to write to sketch session file: {}", e))?;
 
                 // Set user-provided environment variables (--env KEY=VALUE)
                 for (key, val) in extra_env {
@@ -340,10 +374,6 @@ fn exec_with_runuser(username: &str, cmd: &str, args: &[&str]) -> nix::Error {
         CString::new("runuser").expect("Invalid command string"),
         CString::new("--pty").expect("Invalid command string"),
     ];
-
-    // Preserve sketch environment variables
-    runuser_args.push(CString::new("-w").expect("Invalid command string"));
-    runuser_args.push(CString::new("SKETCH_SESSION,SKETCH_SESSION_DIR,SKETCH_ORIGINAL_UID,SKETCH_ORIGINAL_GID").expect("Invalid command string"));
 
     runuser_args.push(CString::new(username).expect("Invalid command string"));
 

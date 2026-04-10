@@ -13,6 +13,7 @@ This is a list of current tasks for sketch. Any contribution is welcome!
 - [ ] Support `attach` command to restore disconnected session
 - [ ] Change bash interactive session to login session
 - [ ] Review name config variable
+- [ ] Add option to preserve current dir
 
 ### Done ✓
 

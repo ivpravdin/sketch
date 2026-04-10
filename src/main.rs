@@ -4,24 +4,22 @@ mod overlay;
 mod session;
 mod utils;
 
-use std::process;
+use std::{os::unix::fs::PermissionsExt, process};
+use std::io::Write;
+use std::path::PathBuf;
 
+fn is_root() -> bool {
+    nix::unistd::geteuid().is_root()
+}
 fn main() {
     let config = cli::parse_args();
 
-    // Check privileges: need root for session commands
-    if !nix::unistd::geteuid().is_root() {
-        match &config.command {
-            cli::Command::Clean | cli::Command::List(_) | cli::Command::Status => {}
-            _ => {
-                eprintln!("sketch: must be run as root (try: sudo sketch)");
-                process::exit(1);
-            }
-        }
-    }
-
     match &config.command {
         cli::Command::Shell => {
+            if !is_root() {
+                eprintln!("sketch: 'shell' command requires root privileges");
+                process::exit(1);
+            }
             let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
@@ -38,6 +36,10 @@ fn main() {
             }
         }
         cli::Command::Run(_, _) => {
+            if !is_root() {
+                eprintln!("sketch: 'run' command requires root privileges");
+                process::exit(1);
+            }
             let session = match session::Session::new(&config) {
                 Ok(s) => s,
                 Err(e) => {
@@ -113,12 +115,18 @@ fn main() {
         cli::Command::Status => {
             print_status();
         }
-        cli::Command::Clean => match overlay::clean_orphaned() {
-            Ok(0) => println!("sketch: no orphaned sessions found"),
-            Ok(n) => println!("sketch: cleaned up {} orphaned session(s)", n),
-            Err(e) => {
-                eprintln!("sketch: cleanup failed: {}", e);
+        cli::Command::Clean => {
+            if !is_root() {
+                eprintln!("sketch: 'clean' command requires root privileges");
                 process::exit(1);
+            }
+            match overlay::clean_orphaned() {
+                Ok(0) => println!("sketch: no orphaned sessions found"),
+                Ok(n) => println!("sketch: cleaned up {} orphaned session(s)", n),
+                Err(e) => {
+                    eprintln!("sketch: cleanup failed: {}", e);
+                    process::exit(1);
+                }
             }
         },
     }
@@ -126,7 +134,9 @@ fn main() {
 
 fn handle_commit(files: &[String]) -> Result<(), String> {
     // Check if we're running inside a sketch session
-    if std::env::var("SKETCH_SESSION").is_err() {
+    let session_file_path = "/var/.sketch-session";
+
+    if !std::path::Path::new(session_file_path).exists() {
         return Err(
             "'sketch commit' can only be run inside an active sketch session.\n\
              Use it within a session to mark files for persistence."
@@ -137,17 +147,23 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
     // Write commit list inside the session (in overlay, not in /tmp/sketch-xxx)
     // This goes into the overlay upper directory where parent can access it
     // Use /var for metadata since it's a standard location for such files
-    let commit_list_path = "/var/.sketch-commit";
+    let commit_list_path = "/tmp/.sketch-commit";
 
-    // Append files to the commit list
-    use std::io::Write;
-    use std::path::PathBuf;
-
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&commit_list_path)
-        .map_err(|e| format!("Failed to open commit list: {}", e))?;
+    let mut commit_file = if PathBuf::from(commit_list_path).exists() {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&commit_list_path)
+            .map_err(|e| format!("Failed to open commit list: {}", e))?
+    } else {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&commit_list_path)
+            .map_err(|e| format!("Failed to create commit list: {}", e))?;
+        std::fs::set_permissions(&commit_list_path, std::fs::Permissions::from_mode(0o666))
+            .map_err(|e| format!("Failed to set permissions on commit list: {}", e))?;
+        file
+    };
 
     // Build a list of mount points from /proc/mounts for finding which mount each file belongs to
     let mount_points = get_mount_points()?;
@@ -181,7 +197,7 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
         let mount_point = find_mount_for_path(&abs_path, &mount_points)?;
 
         let abs_path_str = abs_path.to_string_lossy().to_string();
-        writeln!(file, "{}|{}", mount_point, abs_path_str)
+        writeln!(commit_file, "{}|{}", mount_point, abs_path_str)
             .map_err(|e| format!("Failed to write to commit list: {}", e))?;
         println!("sketch: marked for commit: {}", abs_path_str);
     }
