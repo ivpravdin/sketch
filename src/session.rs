@@ -2,6 +2,7 @@ use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
+use std::os::linux::fs::MetadataExt;
 use std::{env, process};
 use std::io::Write;
 
@@ -184,6 +185,15 @@ impl<'a> Session<'a> {
 
                     // Check if the file exists in the overlay
                     if upper_file.exists() {
+                        let metadata = match std::fs::metadata(&upper_file) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                eprintln!("sketch: warning: failed to get metadata for {}: {}", upper_file.display(), e);
+                                missing_count += 1;
+                                continue;
+                            }
+                        };
+
                         match std::fs::copy(&upper_file, file_path) {
                             Ok(_) => {
                                 if self.config.verbose {
@@ -193,6 +203,13 @@ impl<'a> Session<'a> {
                             }
                             Err(e) => {
                                 eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
+                            }
+                        }
+
+                        match nix::unistd::chown(file_path, Some(nix::unistd::Uid::from_raw(metadata.st_uid())), Some(nix::unistd::Gid::from_raw(metadata.st_gid()))) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("sketch: warning: failed to set ownership for {}: {}", file_path, e);
                             }
                         }
                     } else {

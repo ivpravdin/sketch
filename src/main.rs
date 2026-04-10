@@ -4,9 +4,9 @@ mod overlay;
 mod session;
 mod utils;
 
-use std::{os::unix::fs::{OpenOptionsExt, PermissionsExt}, process};
-
-use nix::libc::chmod;
+use std::{os::unix::fs::PermissionsExt, process};
+use std::io::Write;
+use std::path::PathBuf;
 
 fn is_root() -> bool {
     nix::unistd::geteuid().is_root()
@@ -148,10 +148,6 @@ fn handle_commit(files: &[String]) -> Result<(), String> {
     // This goes into the overlay upper directory where parent can access it
     // Use /var for metadata since it's a standard location for such files
     let commit_list_path = "/tmp/.sketch-commit";
-
-    // Append files to the commit list
-    use std::io::Write;
-    use std::path::PathBuf;
 
     let mut commit_file = if PathBuf::from(commit_list_path).exists() {
         std::fs::OpenOptions::new()
