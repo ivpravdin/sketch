@@ -3,6 +3,19 @@ use std::process;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+macro_rules! ensure_option_valid {
+    ($config:expr, $opt_name:expr, [$( $pattern:pat => $name:expr ),+ $(,)?]) => {
+        if !( $( matches!($config.command, $pattern) )||+ ) {
+            eprintln!(
+                "sketch: '{}' option is only valid for {}",
+                $opt_name,
+                vec![$($name),+].join(" and ")
+            );
+            std::process::exit(1);
+        }
+    };
+}
+
 #[derive(Debug)]
 pub enum Command {
     Shell,
@@ -44,7 +57,33 @@ pub fn parse_args() -> Config {
     };
     let mut positional = Vec::new();
 
+    if args.is_empty() {
+        return config; // No args, default to shell
+    }
+
     let mut i = 0;
+    
+    // determine command
+    if args[0].starts_with('-') {
+        // No command, assume shell
+        config.command = Command::Shell;
+    } else {
+        // First arg is command, parse it and then options
+        match args[0].as_str() {
+            "shell" => config.command = Command::Shell,
+            "run" => config.command = Command::Run(Vec::new(), RunOptions::default()), // will fill in later
+            "commit" => config.command = Command::Commit(Vec::new()), // will fill in later
+            "list" | "ls" => config.command = Command::List(ListOptions::default()), // will fill in later
+            "status" => config.command = Command::Status,
+            _ => {
+                eprintln!("sketch: unknown command '{}'", args[0]);
+                eprintln!("Try 'sketch --help' for more information.");
+                process::exit(1);
+            }
+        }
+        i += 1; // Move past command
+    }
+
     while i < args.len() {
         match args[i].as_str() {
             "--help" | "-h" => {
@@ -65,6 +104,14 @@ pub fn parse_args() -> Config {
                 break;
             }
             "--name" => {
+               ensure_option_valid!(
+                    config,
+                    "--name",
+                    [
+                        Command::Run(_, _) => "run",
+                        Command::Shell => "shell"
+                    ]
+                );
                 i += 1;
                 if i >= args.len() {
                     eprintln!("sketch: '--name' requires a value");
@@ -73,9 +120,25 @@ pub fn parse_args() -> Config {
                 config.name = Some(args[i].clone());
             }
             "--x11" => {
+                ensure_option_valid!(
+                    config,
+                    "--x11",
+                    [
+                        Command::Run(_, _) => "run",
+                        Command::Shell => "shell"
+                    ]
+                );
                 config.x11 = true;
             }
             "--as-root" => {
+                ensure_option_valid!(
+                    config,
+                    "--as-root",
+                    [
+                        Command::Run(_, _) => "run",
+                        Command::Shell => "shell"
+                    ]
+                );
                 config.as_root = true;
             }
             arg if arg.starts_with('-') && positional.is_empty() => {
@@ -91,27 +154,20 @@ pub fn parse_args() -> Config {
     }
 
     if !positional.is_empty() {
-        match positional[0].as_str() {
-            "shell" => config.command = Command::Shell,
-            "run" => {
-                config.command = parse_run_command(&positional[1..]);
-            }
-            "commit" => {
-                if positional.len() < 2 {
-                    eprintln!("sketch: 'commit' requires at least one file path");
-                    eprintln!("Usage: sketch commit [FILE...]");
-                    process::exit(1);
-                }
-                config.command = Command::Commit(positional[1..].to_vec());
-            }
-            "list" | "ls" => {
-                config.command = parse_list_command(&positional[1..]);
-            }
-            "status" => {
-                config.command = Command::Status;
-            }
+        ensure_option_valid!(
+            config,
+            "positional arguments",
+            [
+                Command::Run(_, _) => "run",
+                Command::Commit(_) => "commit",
+            ]
+        );
+        config.command = match config.command {
+            Command::Run(_, _) => parse_run_command(&positional),
+            Command::Commit(_) => parse_commit_command(&positional),
+            Command::List(_) => parse_list_command(&positional),
             _ => {
-                eprintln!("sketch: unknown command '{}'", positional[0]);
+                eprintln!("sketch: unexpected positional arguments");
                 eprintln!("Try 'sketch --help' for more information.");
                 process::exit(1);
             }
@@ -194,6 +250,15 @@ fn parse_run_command(args: &[String]) -> Command {
     }
 
     Command::Run(cmd_args, options)
+}
+
+fn parse_commit_command(args: &[String]) -> Command {
+    if args.is_empty() {
+        eprintln!("sketch: 'commit' requires at least one file argument");
+        eprintln!("Usage: sketch commit [--recursive] FILE [FILE...]");
+        process::exit(1);
+    }
+    Command::Commit(args.to_vec())
 }
 
 fn parse_list_command(args: &[String]) -> Command {

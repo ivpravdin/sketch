@@ -2,13 +2,13 @@ use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
-use std::os::linux::fs::MetadataExt;
 use std::{env, process};
 use std::io::Write;
 
 use crate::cli::{Config, Command};
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
+use crate::commit::commit_marked_files;
 
 pub struct Session<'a> {
     overlay: OverlaySession,
@@ -116,124 +116,6 @@ impl<'a> Session<'a> {
         }
 
         Ok(())
-    }
-
-    /// Process files marked for commitment from the overlay to the base filesystem.
-    fn commit_marked_files(&self) {
-        // The commit list is written inside the session (at /var/.sketch-commit)
-        // which goes into the overlay upper directory
-        let commit_list_in_upper = self.overlay.upper_dir.join("tmp/.sketch-commit");
-
-        // Check if a commit list exists
-        if !commit_list_in_upper.exists() {
-            if self.config.verbose {
-                eprintln!("sketch: no marked files to commit");
-            }
-            return;
-        }
-
-        // Read the commit list from the overlay upper directory
-        match std::fs::read_to_string(&commit_list_in_upper) {
-            Ok(content) => {
-                let mut committed_count = 0;
-                let mut missing_count = 0;
-
-                for line in content.lines() {
-                    let entry = line.trim();
-                    if entry.is_empty() {
-                        continue;
-                    }
-
-                    // Parse the new format: MOUNTPOINT|FILE_PATH
-                    // e.g., "/home|/home/user/.bashrc" or "/|/etc/nginx.conf"
-                    let parts: Vec<&str> = entry.splitn(2, '|').collect();
-                    if parts.len() != 2 {
-                        eprintln!(
-                            "sketch: warning: invalid commit list entry (no mount): {}",
-                            entry
-                        );
-                        continue;
-                    }
-
-                    let mount_point = parts[0];
-                    let file_path = parts[1];
-
-                    // Find the correct upper directory for this mount point
-                    let upper_dir = if mount_point == "/" {
-                        // Root overlay
-                        self.overlay.upper_dir.clone()
-                    } else {
-                        // Extra mount: compute the upper directory path
-                        let mount_hash = crate::overlay::mount_name_from_path(mount_point);
-                        self.overlay
-                            .session_dir
-                            .join(format!("upper-{}", mount_hash))
-                    };
-
-                    // Compute relative path within the mount point
-                    let rel_path = if mount_point == "/" {
-                        file_path.trim_start_matches('/')
-                    } else {
-                        // Remove the mount_point prefix from file_path
-                        file_path
-                            .strip_prefix(mount_point)
-                            .unwrap_or(file_path)
-                            .trim_start_matches('/')
-                    };
-
-                    let upper_file = upper_dir.join(rel_path);
-
-                    // Check if the file exists in the overlay
-                    if upper_file.exists() {
-                        let metadata = match std::fs::metadata(&upper_file) {
-                            Ok(m) => m,
-                            Err(e) => {
-                                eprintln!("sketch: warning: failed to get metadata for {}: {}", upper_file.display(), e);
-                                missing_count += 1;
-                                continue;
-                            }
-                        };
-
-                        match std::fs::copy(&upper_file, file_path) {
-                            Ok(_) => {
-                                if self.config.verbose {
-                                    eprintln!("sketch: committed {}", file_path);
-                                }
-                                committed_count += 1;
-                            }
-                            Err(e) => {
-                                eprintln!("sketch: warning: failed to commit {}: {}", file_path, e);
-                            }
-                        }
-
-                        match nix::unistd::chown(file_path, Some(nix::unistd::Uid::from_raw(metadata.st_uid())), Some(nix::unistd::Gid::from_raw(metadata.st_gid()))) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                eprintln!("sketch: warning: failed to set ownership for {}: {}", file_path, e);
-                            }
-                        }
-                    } else {
-                        eprintln!(
-                            "sketch: warning: marked file does not exist in overlay: {}",
-                            file_path
-                        );
-                        missing_count += 1;
-                    }
-                }
-
-                if self.config.verbose {
-                    if committed_count > 0 {
-                        eprintln!("sketch: committed {} file(s)", committed_count);
-                    }
-                    if missing_count > 0 {
-                        eprintln!("sketch: {} marked file(s) were not found", missing_count);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("sketch: warning: failed to read commit list: {}", e);
-            }
-        }
     }
 
     fn run_command(mut self) -> Result<i32, String> {
@@ -353,7 +235,7 @@ impl<'a> Session<'a> {
                 let exit_code = wait_for_child(child, timeout);
 
                 // Now safe to access original filesystem for cleanup
-                self.commit_marked_files();
+                commit_marked_files(self.config, &self.overlay);
                 self.overlay.cleanup();
                 // Prevent double-cleanup in Drop
                 std::mem::forget(self);

@@ -5,7 +5,6 @@ This is a list of current tasks for sketch. Any contribution is welcome!
 ### Todo
 
 - [ ] Figure out best testing approach (`cargo test` does not play well with `sudo`)
-- [ ] Add commit functionality to directories (`-r` argument for recursive)
 - [ ] Plan sudoless access (need to figure out best approach)
 - [ ] Setup github workflows for testing
 - [ ] Update metadata (need to include all overlays)
@@ -19,3 +18,4 @@ This is a list of current tasks for sketch. Any contribution is welcome!
 - [x] Add `--as-root` argument. Run sketch session as user by default even when executed with `sudo`
 - [x] Change bash interactive session to login session
 - [x] Review name config variable
+- [x] Add commit functionality to directories
