@@ -2,13 +2,13 @@ use nix::sched::{unshare, CloneFlags};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
-use std::{env, process};
 use std::io::Write;
+use std::{env, process};
 
-use crate::cli::{Config, Command};
+use crate::cli::{Command, Config};
+use crate::commit::commit_marked_files;
 use crate::metadata::SessionMetadata;
 use crate::overlay::OverlaySession;
-use crate::commit::commit_marked_files;
 
 pub struct Session<'a> {
     overlay: OverlaySession,
@@ -19,9 +19,7 @@ pub struct Session<'a> {
 }
 
 impl<'a> Session<'a> {
-
     pub fn new(config: &'a Config) -> Result<Self, String> {
-
         let overlay = OverlaySession::new(&config)
             .map_err(|e| format!("Failed to create session directories: {}", e))?;
 
@@ -43,7 +41,7 @@ impl<'a> Session<'a> {
     }
 
     pub fn start_shell(mut self) -> Result<i32, String> {
-        self.write_metadata(self.config.name.as_ref(), "shell")?;
+        self.write_metadata("shell")?;
         self.setup()?;
         self.run_command()
     }
@@ -56,20 +54,25 @@ impl<'a> Session<'a> {
         };
 
         let cmd_str = format!("run {}", args.join(" "));
-        self.write_metadata(self.config.name.as_ref(), &cmd_str)?;
+        self.write_metadata(&cmd_str)?;
 
         self.run_command()
     }
 
     /// Write session metadata to disk for `sketch list` to discover.
-    fn write_metadata(&self, name: Option<&String>, command: &str) -> Result<(), String> {
-        let meta = SessionMetadata::new(
+    fn write_metadata(&self, command: &str) -> Result<(), String> {
+        let mut meta = SessionMetadata::new(
             &self.overlay.session_id,
-            name.map(|s| s.clone()),
+            &self.overlay.session_dir.display().to_string(),
+            self.config.name.clone(),
+            std::time::Instant::now().elapsed().as_secs(),
             command,
-            &self.overlay.session_dir,
+            &self.overlay.upper_dir.display().to_string(),
+            &self.overlay.work_dir.display().to_string(),
+            &self.overlay.merged_dir.display().to_string(),
+            self.overlay.extra_mounts.clone(),
         );
-        meta.save(&self.overlay.session_dir)
+        meta.takeover(nix::unistd::getpid().as_raw(), &self.overlay.session_dir)
     }
 
     fn setup(&mut self) -> Result<(), String> {
@@ -101,7 +104,8 @@ impl<'a> Session<'a> {
         if self.config.verbose {
             eprintln!("sketch: mounting additional partitions...");
         }
-        self.overlay.mount_additional_filesystems(self.config.verbose)?;
+        self.overlay
+            .mount_additional_filesystems(self.config.verbose)?;
 
         if self.config.verbose {
             eprintln!("sketch: adding hostname entry to /etc/hosts...");
@@ -126,7 +130,12 @@ impl<'a> Session<'a> {
             }
             Command::Run(args, run_opts) => {
                 let cmd = args[0].clone();
-                let cmd_args: Vec<&str> = args.get(1..).unwrap_or(&[]).iter().map(|s| s.as_str()).collect();
+                let cmd_args: Vec<&str> = args
+                    .get(1..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
                 let extra_env = run_opts
                     .env_vars
                     .iter()
@@ -138,7 +147,14 @@ impl<'a> Session<'a> {
         };
 
         if self.config.verbose {
-            eprintln!("sketch: spawning: {} {}", cmd, args.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join(" "));
+            eprintln!(
+                "sketch: spawning: {} {}",
+                cmd,
+                args.iter()
+                    .map(|s| s.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
             if let Some(t) = &timeout {
                 eprintln!("sketch: timeout: {}s", t);
             }
@@ -168,7 +184,10 @@ impl<'a> Session<'a> {
                 let session_file_path = "/var/.sketch-session";
 
                 if self.config.verbose {
-                    eprintln!("sketch: [child] writing session metadata to {}", session_file_path);
+                    eprintln!(
+                        "sketch: [child] writing session metadata to {}",
+                        session_file_path
+                    );
                 }
 
                 // Set session identifiers for child processes to detect they're in a session
@@ -185,13 +204,14 @@ impl<'a> Session<'a> {
                     self.original_uid,
                     self.original_gid,
                     self.config.name.as_deref().unwrap_or("")
-                ).map_err(|e| format!("Failed to write to sketch session file: {}", e))?;
+                )
+                .map_err(|e| format!("Failed to write to sketch session file: {}", e))?;
 
                 // Set user-provided environment variables (--env KEY=VALUE)
                 for (key, val) in extra_env {
                     std::env::set_var(key, val);
                 }
-                
+
                 // Set the working directory inside the session to match the original cwd if possible
                 env::set_current_dir(self.original_cwd).unwrap_or_else(|_| {
                     eprintln!("sketch: [child] warning: failed to set working directory, using /");
@@ -203,20 +223,23 @@ impl<'a> Session<'a> {
                     "root".to_string()
                 } else {
                     if self.config.verbose {
-                        eprintln!("sketch: [child] dropping privileges to UID={}", self.original_uid);
+                        eprintln!(
+                            "sketch: [child] dropping privileges to UID={}",
+                            self.original_uid
+                        );
                     }
                     let sudo_uid = env::var("SUDO_UID")
                         .map_err(|_| "SUDO_UID not set".to_string())
                         .and_then(|uid_str| {
-                            uid_str.parse::<u32>()
+                            uid_str
+                                .parse::<u32>()
                                 .map_err(|_| format!("Invalid SUDO_UID '{}'", uid_str))
                         });
 
                     match sudo_uid {
                         Ok(_target_uid) => {
                             // Get username from SUDO_USER or use uid as fallback
-                            env::var("SUDO_USER")
-                                .unwrap_or_else(|_| self.original_uid.to_string())
+                            env::var("SUDO_USER").unwrap_or_else(|_| self.original_uid.to_string())
                         }
                         Err(e) => {
                             eprintln!("sketch: [child] failed to get user info: {}", e);
@@ -276,8 +299,6 @@ fn exec_with_runuser(username: &str, cmd: &str, args: &[&str]) -> nix::Error {
 
     nix::unistd::execvp(&runuser_args[0], &runuser_args).unwrap_err()
 }
-
-
 
 fn wait_for_child(pid: Pid, timeout: Option<u64>) -> i32 {
     // Forward common signals to child

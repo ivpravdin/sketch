@@ -1,13 +1,11 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::io::Write;
-use std::path::PathBuf;
 use std::os::linux::fs::MetadataExt;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
-use nix::libc::DT_DIR;
-
-use crate::overlay::OverlaySession;
 use crate::cli::Config;
+use crate::overlay::OverlaySession;
 
 pub fn handle_commit(files: &[String]) -> Result<(), String> {
     // Check if we're running inside a sketch session
@@ -129,9 +127,7 @@ pub fn commit_marked_files(config: &Config, overlay: &OverlaySession) {
                 } else {
                     // Extra mount: compute the upper directory path
                     let mount_hash = crate::overlay::mount_name_from_path(mount_point);
-                    overlay
-                        .session_dir
-                        .join(format!("upper-{}", mount_hash))
+                    overlay.session_dir.join(format!("upper-{}", mount_hash))
                 };
 
                 // Compute relative path within the mount point
@@ -149,15 +145,6 @@ pub fn commit_marked_files(config: &Config, overlay: &OverlaySession) {
 
                 // Check if the file exists in the overlay
                 if upper_file.exists() {
-                    let metadata = match std::fs::metadata(&upper_file) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            eprintln!("sketch: warning: failed to get metadata for {}: {}", upper_file.display(), e);
-                            missing_count += 1;
-                            continue;
-                        }
-                    };
-
                     if upper_file.is_dir() {
                         // recurisvely commit directory
                         match commit_dir(&upper_file, file_path) {
@@ -165,11 +152,13 @@ pub fn commit_marked_files(config: &Config, overlay: &OverlaySession) {
                                 committed_count += c;
                             }
                             Err(e) => {
-                                eprintln!("sketch: warning: failed to commit directory {}: {}", file_path, e);
+                                eprintln!(
+                                    "sketch: warning: failed to commit directory {}: {}",
+                                    file_path, e
+                                );
                                 missing_count += 1;
                             }
                         }
-
                     } else {
                         match commit_file(&upper_file, file_path) {
                             Ok(_) => {
@@ -207,23 +196,29 @@ pub fn commit_marked_files(config: &Config, overlay: &OverlaySession) {
 
 fn commit_file(upper_file: &PathBuf, file_path: &str) -> Result<(), String> {
     let metadata = match std::fs::metadata(&upper_file) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            return Err(format!("Failed to get metadata for {}: {}", upper_file.display(), e));
-                        }
-                    };
+        Ok(m) => m,
+        Err(e) => {
+            return Err(format!(
+                "Failed to get metadata for {}: {}",
+                upper_file.display(),
+                e
+            ));
+        }
+    };
 
     match std::fs::copy(upper_file, file_path) {
         Ok(_) => (),
         Err(e) => return Err(format!("Failed to commit {}: {}", file_path, e)),
     };
 
-    match nix::unistd::chown(file_path, Some(nix::unistd::Uid::from_raw(metadata.st_uid())), Some(nix::unistd::Gid::from_raw(metadata.st_gid()))) {
-                            Ok(_) => (),
-                            Err(e) => {
-                                return Err(format!("Failed to set file owner {}: {}", file_path, e))
-                            }
-                        };
+    match nix::unistd::chown(
+        file_path,
+        Some(nix::unistd::Uid::from_raw(metadata.st_uid())),
+        Some(nix::unistd::Gid::from_raw(metadata.st_gid())),
+    ) {
+        Ok(_) => (),
+        Err(e) => return Err(format!("Failed to set file owner {}: {}", file_path, e)),
+    };
 
     Ok(())
 }
@@ -232,18 +227,26 @@ fn commit_dir(upper_dir: &PathBuf, dir_path: &str) -> Result<i32, String> {
     let mut count = 0;
 
     let metadata = match std::fs::metadata(&upper_dir) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            return Err(format!("Failed to get metadata for {}: {}", upper_dir.display(), e));
-                        }
-                    };
-    
+        Ok(m) => m,
+        Err(e) => {
+            return Err(format!(
+                "Failed to get metadata for {}: {}",
+                upper_dir.display(),
+                e
+            ));
+        }
+    };
+
     fs::create_dir_all(dir_path)
         .map_err(|e| format!("Failed to create directory {}: {}", dir_path, e))?;
 
     for entry in fs::read_dir(upper_dir).map_err(|e| format!("{}", e))? {
         let path = entry.map_err(|e| format!("{}", e))?.path();
-        let target_path = format!("{}/{}", dir_path, path.file_name().unwrap().to_string_lossy());
+        let target_path = format!(
+            "{}/{}",
+            dir_path,
+            path.file_name().unwrap().to_string_lossy()
+        );
         if path.is_dir() {
             count += commit_dir(&path, &target_path)?;
         } else {
@@ -252,12 +255,14 @@ fn commit_dir(upper_dir: &PathBuf, dir_path: &str) -> Result<i32, String> {
         }
     }
 
-    match nix::unistd::chown(dir_path, Some(nix::unistd::Uid::from_raw(metadata.st_uid())), Some(nix::unistd::Gid::from_raw(metadata.st_gid()))) {
-                            Ok(_) => (),
-                            Err(e) => {
-                                return Err(format!("Failed to set file owner {}: {}", dir_path, e))
-                            }
-                        };
+    match nix::unistd::chown(
+        dir_path,
+        Some(nix::unistd::Uid::from_raw(metadata.st_uid())),
+        Some(nix::unistd::Gid::from_raw(metadata.st_gid())),
+    ) {
+        Ok(_) => (),
+        Err(e) => return Err(format!("Failed to set file owner {}: {}", dir_path, e)),
+    };
 
     Ok(count)
 }

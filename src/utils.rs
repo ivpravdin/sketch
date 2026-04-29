@@ -28,6 +28,6 @@ pub fn session_id() -> String {
     x ^= x >> 33;
     x = x.wrapping_mul(0xff51afd7ed558ccd);
     x ^= x >> 33;
-    
+
     format!("{:04x}", x & 0xffff)
 }
