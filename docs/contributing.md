@@ -23,7 +23,8 @@ Testing requires root privileges since the core functionality uses OverlayFS:
 sudo cargo test
 ```
 
-Testing framework is a subject to change.
+I would really like help developing comprehensive testing suite. If you have any feedback or idea,
+please let me know!
 
 ### Running Locally
 
@@ -40,11 +41,11 @@ cargo build && sudo ./target/release/sketch --verbose
 
 ## Pull Requests
 
-1. Fork and create a feature branch
+1. Fork and create a feature branch on top of `dev`
 2. Make your changes
 3. Ensure `cargo build` succeeds with no warnings
 4. Test manually with `sudo ./target/release/sketch`
-5. Submit a pull request with a clear description of the change
+5. Submit a pull request to `dev` with a clear description of the change
 
 ## Reporting Issues
 
