@@ -157,7 +157,7 @@ fn print_status() {
     println!("  Active:              {}", active);
     if stale > 0 {
         println!(
-            "  Stale:               {} (run 'sketch --clean' to remove)",
+            "  Stale:               {} (run 'sketch clean' to remove)",
             stale
         );
     }

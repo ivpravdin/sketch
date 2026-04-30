@@ -70,6 +70,7 @@ pub fn parse_args() -> Config {
             "commit" => config.command = Command::Commit(Vec::new()),
             "list" | "ls" => config.command = Command::List,
             "status" => config.command = Command::Status,
+            "clean" => {config.command = Command::Clean; return config},
             _ => {
                 eprintln!("sketch: unknown command '{}'", args[0]);
                 eprintln!("Try 'sketch --help' for more information.");
@@ -90,10 +91,6 @@ pub fn parse_args() -> Config {
                 process::exit(0);
             }
             "--verbose" => config.verbose = true,
-            "--clean" => {
-                config.command = Command::Clean;
-                return config;
-            }
             "--" => {
                 positional.extend_from_slice(&args[i + 1..]);
                 break;
@@ -267,7 +264,6 @@ OPTIONS:
     -h, --help       Show this help message
     -v, --version    Show version
     --verbose        Enable verbose output
-    --clean          Clean up orphaned overlay mounts
     --as-root        Run session with root privileges (default is to switch to a non-root user)
 
 COMMANDS:
@@ -276,6 +272,7 @@ COMMANDS:
     commit [FILE...]       Persist files to base filesystem (inside session only)
     list                   Show active sessions
     status                 Show system information and diagnostics
+    clean                  Remove stale sessions that are no longer active
 
 RUN OPTIONS:
     --name NAME            Label the session for identification

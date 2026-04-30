@@ -72,7 +72,7 @@ If sketch was killed forcefully (`kill -9`) or the system crashed during a sessi
 
 ```bash
 # Clean up orphaned sessions
-sudo sketch --clean
+sudo sketch clean
 
 # Manual cleanup if needed
 ls /tmp/sketch-*

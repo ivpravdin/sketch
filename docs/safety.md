@@ -21,7 +21,7 @@ Sketch is designed to make experimentation safe. Here are the guarantees it prov
 **How**:
 - The `OverlaySession` struct implements `Drop`, so cleanup runs when the struct is deallocated.
 - The parent process catches the child's exit (even via signals) and runs cleanup before exiting.
-- For catastrophic failures (power loss, `kill -9` on the parent), orphaned directories persist in `/tmp` but can be cleaned with `sketch --clean`.
+- For catastrophic failures (power loss, `kill -9` on the parent), orphaned directories persist in `/tmp` but can be cleaned with `sketch clean`.
 - The OS will also reclaim `/tmp` on reboot.
 
 ## 4. Filesystem Consistency
@@ -44,8 +44,8 @@ Sketch is designed to make experimentation safe. Here are the guarantees it prov
 | `rm -rf /` inside session | Session filesystem destroyed, host untouched |
 | `apt install nginx` inside session | Nginx installed in overlay only, gone on exit |
 | Edit `/etc/passwd` inside session | Change exists only in overlay, host users unaffected |
-| Session crashes | `Drop` handler cleans up; if that fails, `--clean` recovers |
-| Power loss during session | Orphaned dirs in `/tmp`; cleaned on reboot or via `--clean` |
+| Session crashes | `Drop` handler cleans up; if that fails, `clean` recovers |
+| Power loss during session | Orphaned dirs in `/tmp`; cleaned on reboot or via `clean` |
 | `iptables` rules changed in session | These affect the host (network is not isolated) |
 | Write to `/dev/sda` inside session | This affects the host (device access is real) |
 

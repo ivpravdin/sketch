@@ -8,7 +8,7 @@ Sketch creates ephemeral system sessions using Linux OverlayFS. It layers a temp
 
 ### CLI (`src/cli.rs`)
 
-Hand-rolled argument parser (no external dependencies). Parses options (`--help`, `--version`, `--verbose`, `--clean`) and subcommands (`shell`, `exec`). Returns a `Config` struct with the parsed `Command` variant and flags.
+Hand-rolled argument parser (no external dependencies). Parses options (`--help`, `--version`, `--verbose`) and subcommands (`shell`, `exec`). Returns a `Config` struct with the parsed `Command` variant and flags.
 
 ### Overlay (`src/overlay.rs`)
 

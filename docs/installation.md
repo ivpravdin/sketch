@@ -72,5 +72,5 @@ sudo rm /usr/local/bin/sketch
 To clean up any orphaned session directories:
 
 ```bash
-sudo sketch --clean
+sudo sketch clean
 ```

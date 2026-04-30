@@ -76,7 +76,7 @@ sudo sketch run --name "my-task" -- bash -c "apt update && apt install pkg"
 
 ```bash
 sketch list              # Show active sessions
-sketch --clean           # Cleanup orphaned overlay mounts
+sketch clean           # Cleanup orphaned overlay mounts
 ```
 
 ## Documentation
@@ -162,7 +162,7 @@ A: At your own risk. Sketch does not guarantee full isolation.
 A: Not yet, but this feature is planned.
 
 **Q: What about disk space?**
-A: Sketch uses `/tmp`. Only modified data counts toward disk usage. Run `sketch --clean` to remove orphaned sessions.
+A: Sketch uses `/tmp`. Only modified data counts toward disk usage. Run `sketch clean` to remove orphaned sessions.
 
 **Q: Can I commit files with different ownership?**
 A: Files are committed with your user's ownership. Root can commit any ownership.

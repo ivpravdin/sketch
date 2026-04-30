@@ -7,10 +7,10 @@ All sketch commands must be run with sudo because OverlayFS mounting, mount name
 ```bash
 sudo sketch                    # Interactive shell
 sudo sketch run ./script.sh   # Run a command
-sudo sketch --clean            # Clean orphaned sessions
+sudo sketch clean            # Clean orphaned sessions
 ```
 
-The `--help` and `--version` flags work without sudo. The `--clean` command also works without root (though it may not be able to unmount all orphaned overlays).
+The `--help` and `--version` flags work without sudo. The `clean` command also works without root (though it may not be able to unmount all orphaned overlays).
 
 ## Basic Usage
 
@@ -50,7 +50,7 @@ sudo sketch run bash risky-script.sh
 If sketch was interrupted (e.g., power loss, `kill -9`), temporary directories may remain in `/tmp`:
 
 ```bash
-sudo sketch --clean
+sudo sketch clean
 ```
 
 ## Command Reference
@@ -62,7 +62,7 @@ OPTIONS:
     -h, --help       Show this help message
     -v, --version    Show version
     --verbose        Enable verbose output
-    --clean          Clean up orphaned overlay mounts
+    clean          Clean up orphaned overlay mounts
     --as-root        Run session with root privileges (default is to switch to a non-root user)
 
 COMMANDS:
