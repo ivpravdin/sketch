@@ -21,7 +21,7 @@ pub enum Command {
     Shell,
     Run(Vec<String>, RunOptions),
     Commit(Vec<String>),
-    List(ListOptions),
+    List,
     Status,
     Clean,
 }
@@ -30,11 +30,6 @@ pub enum Command {
 pub struct RunOptions {
     pub timeout: Option<u64>,
     pub env_vars: Vec<(String, String)>,
-}
-
-#[derive(Debug, Default)]
-pub struct ListOptions {
-    pub json: bool,
 }
 
 #[derive(Debug)]
@@ -62,7 +57,7 @@ pub fn parse_args() -> Config {
     }
 
     let mut i = 0;
-    
+
     // determine command
     if args[0].starts_with('-') {
         // No command, assume shell
@@ -71,9 +66,9 @@ pub fn parse_args() -> Config {
         // First arg is command, parse it and then options
         match args[0].as_str() {
             "shell" => config.command = Command::Shell,
-            "run" => config.command = Command::Run(Vec::new(), RunOptions::default()), // will fill in later
-            "commit" => config.command = Command::Commit(Vec::new()), // will fill in later
-            "list" | "ls" => config.command = Command::List(ListOptions::default()), // will fill in later
+            "run" => config.command = Command::Run(Vec::new(), RunOptions::default()),
+            "commit" => config.command = Command::Commit(Vec::new()),
+            "list" | "ls" => config.command = Command::List,
             "status" => config.command = Command::Status,
             _ => {
                 eprintln!("sketch: unknown command '{}'", args[0]);
@@ -104,7 +99,7 @@ pub fn parse_args() -> Config {
                 break;
             }
             "--name" => {
-               ensure_option_valid!(
+                ensure_option_valid!(
                     config,
                     "--name",
                     [
@@ -165,7 +160,6 @@ pub fn parse_args() -> Config {
         config.command = match config.command {
             Command::Run(_, _) => parse_run_command(&positional),
             Command::Commit(_) => parse_commit_command(&positional),
-            Command::List(_) => parse_list_command(&positional),
             _ => {
                 eprintln!("sketch: unexpected positional arguments");
                 eprintln!("Try 'sketch --help' for more information.");
@@ -261,26 +255,6 @@ fn parse_commit_command(args: &[String]) -> Command {
     Command::Commit(args.to_vec())
 }
 
-fn parse_list_command(args: &[String]) -> Command {
-    let mut options = ListOptions::default();
-
-    for arg in args {
-        match arg.as_str() {
-            "--json" => options.json = true,
-            arg if arg.starts_with('-') => {
-                eprintln!("sketch: unknown list option '{}'", arg);
-                process::exit(1);
-            }
-            _ => {
-                eprintln!("sketch: 'list' does not take positional arguments");
-                process::exit(1);
-            }
-        }
-    }
-
-    Command::List(options)
-}
-
 fn print_help() {
     println!(
         "\
@@ -300,7 +274,7 @@ COMMANDS:
     shell                  Start interactive shell session (default)
     run [OPTIONS] -- CMD   Run a command non-interactively (for scripting/CI)
     commit [FILE...]       Persist files to base filesystem (inside session only)
-    list [--json]          Show active sessions
+    list                   Show active sessions
     status                 Show system information and diagnostics
 
 RUN OPTIONS:

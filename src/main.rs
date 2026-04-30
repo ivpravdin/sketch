@@ -1,12 +1,12 @@
 mod cli;
+mod commit;
 mod metadata;
 mod overlay;
 mod session;
 mod utils;
-mod commit;
 
-use std::process;
 use crate::commit::handle_commit;
+use std::process;
 
 fn is_root() -> bool {
     nix::unistd::geteuid().is_root()
@@ -61,54 +61,36 @@ fn main() {
                 eprintln!("sketch: {}", e);
                 process::exit(1);
             }
-        }
-        cli::Command::List(options) => {
+        },
+        cli::Command::List => {
             let sessions = metadata::list_sessions();
             if sessions.is_empty() {
-                if options.json {
-                    println!("[]");
-                } else {
-                    println!("No active sessions.");
-                }
+                println!("No active sessions.");
                 return;
             }
-            if options.json {
-                match serde_json::to_string_pretty(&sessions) {
-                    Ok(json) => println!("{}", json),
-                    Err(e) => {
-                        eprintln!("sketch: failed to serialize sessions: {}", e);
-                        process::exit(1);
-                    }
-                }
-            } else {
+            println!(
+                "{:<38}  {:<12}  {:>6}  {:>7}  {:>8}  {}",
+                "SESSION ID", "NAME", "PID", "STATUS", "CREATED", "COMMAND"
+            );
+            for s in &sessions {
+                let status = if s.is_alive() { "active" } else { "stale" };
+                let name = s.name.as_deref().unwrap_or("-");
+                let cmd_display = if s.command.len() > 30 {
+                    format!("{}...", &s.command[..27])
+                } else {
+                    s.command.clone()
+                };
                 println!(
                     "{:<38}  {:<12}  {:>6}  {:>7}  {:>8}  {}",
-                    "SESSION ID", "NAME", "PID", "STATUS", "AGE", "COMMAND"
+                    s.id,
+                    name,
+                    s.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".into()),
+                    status,
+                    s.created,
+                    cmd_display,
                 );
-                for s in &sessions {
-                    let status = if s.is_alive() { "active" } else { "stale" };
-                    let name = s.name.as_deref().unwrap_or("-");
-                    let size = metadata::session_size(
-                        &metadata::get_session_dir(&s.id).unwrap_or_default(),
-                    );
-                    let size_str = metadata::format_size(size);
-                    let cmd_display = if s.command.len() > 30 {
-                        format!("{}...", &s.command[..27])
-                    } else {
-                        s.command.clone()
-                    };
-                    println!(
-                        "{:<38}  {:<12}  {:>6}  {:>7}  {:>8}  {}",
-                        s.id,
-                        name,
-                        s.pid,
-                        status,
-                        s.format_age(),
-                        cmd_display,
-                    );
-                    if config.verbose {
-                        eprintln!("  size: {}, path: {}", size_str, s.overlay_path);
-                    }
+                if config.verbose {
+                    eprintln!("path: {}", s.session_dir);
                 }
             }
         }
@@ -128,7 +110,7 @@ fn main() {
                     process::exit(1);
                 }
             }
-        },
+        }
     }
 }
 
@@ -164,11 +146,7 @@ fn print_status() {
         } else {
             0
         };
-        println!(
-            "  /tmp available:      {} ({}% used)",
-            metadata::format_size(avail),
-            pct
-        );
+        println!("  /tmp available:      {} ({}% used)", avail, pct);
     }
 
     // Sessions

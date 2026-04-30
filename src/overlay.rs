@@ -1,13 +1,22 @@
+use core::result::Result;
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
-use nix::unistd::{sethostname, gethostname};
-use core::result::Result;
+use nix::unistd::{gethostname, sethostname};
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::utils::{fnv1a_hash, session_id};
 use crate::cli::Config;
+use crate::metadata::SessionMetadata;
+use crate::utils::{fnv1a_hash, session_id};
+
+#[derive(Clone)]
+pub struct ExtraOverlayMount {
+    pub lowerdir: String,
+    pub upperdir: PathBuf,
+    pub workdir: PathBuf,
+    pub target: PathBuf,
+}
 
 pub struct OverlaySession {
     pub session_id: String,
@@ -16,7 +25,7 @@ pub struct OverlaySession {
     pub work_dir: PathBuf,
     pub merged_dir: PathBuf,
     pub mounted: bool,
-    pub extra_mounts: Vec<PathBuf>,
+    pub extra_mounts: Vec<ExtraOverlayMount>,
 }
 
 /// Generate a unique, collision-free name for a mount point's overlay directories.
@@ -31,7 +40,11 @@ pub fn mount_name_from_path(mountpoint: &str) -> String {
 impl OverlaySession {
     pub fn new(config: &Config) -> io::Result<Self> {
         let session_id = if config.name.is_some() {
-            let name = config.name.as_ref().unwrap().replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+            let name = config
+                .name
+                .as_ref()
+                .unwrap()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
             if name.is_empty() {
                 return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty name"));
             } else {
@@ -46,7 +59,10 @@ impl OverlaySession {
         if session_dir.exists() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
-                format!("Session directory already exists: {}", session_dir.display()),
+                format!(
+                    "Session directory already exists: {}",
+                    session_dir.display()
+                ),
             ));
         }
 
@@ -93,8 +109,7 @@ impl OverlaySession {
 
     pub fn change_hostname(&self) -> Result<(), String> {
         let hostname = format!("sketch-{}", self.session_id());
-        sethostname(&hostname)
-            .map_err(|e| format!("Failed to set hostname: {}", e))?;
+        sethostname(&hostname).map_err(|e| format!("Failed to set hostname: {}", e))?;
         Ok(())
     }
 
@@ -380,7 +395,12 @@ impl OverlaySession {
                             target.display()
                         );
                     }
-                    self.extra_mounts.push(target);
+                    self.extra_mounts.push(ExtraOverlayMount {
+                        lowerdir: mountpoint.to_string(),
+                        upperdir: mount_upper,
+                        workdir: mount_work,
+                        target: target,
+                    });
                 }
                 Err(e) => {
                     if verbose {
@@ -411,7 +431,8 @@ impl OverlaySession {
             None::<&str>,
             MsFlags::MS_BIND | MsFlags::MS_REC,
             None::<&str>,
-        ).map_err(|e| format!("Failed to mount X11 socker: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to mount X11 socker: {}", e))?;
 
         Ok(())
     }
@@ -436,8 +457,8 @@ impl OverlaySession {
     pub fn cleanup(&mut self) {
         if self.mounted {
             // Unmount extra mounts first (best effort)
-            for path in self.extra_mounts.drain(..) {
-                let _ = umount2(&path, MntFlags::MNT_DETACH);
+            for mount in self.extra_mounts.drain(..) {
+                let _ = umount2(&mount.target, MntFlags::MNT_DETACH);
             }
 
             // Unmount virtual filesystems (best effort)
@@ -525,29 +546,27 @@ pub fn clean_orphaned() -> io::Result<u32> {
             if name_str.starts_with("sketch-") {
                 let path = entry.path();
 
-                // Check if session is actually stale by reading metadata
-                let metadata_path = path.join(".sketch-metadata.json");
-                if let Ok(metadata) = fs::read_to_string(&metadata_path) {
-                    if let Ok(meta) =
-                        serde_json::from_str::<crate::metadata::SessionMetadata>(&metadata)
-                    {
-                        // Only clean up stale sessions (process no longer exists)
-                        if !meta.is_alive() {
-                            let merged = path.join("merged");
+                if let Ok(meta) = SessionMetadata::load(&path) {
+                    // Only clean up stale sessions (process no longer exists)
+                    if !meta.is_alive() {
+                        let merged = path.join("merged");
 
-                            // Aggressively unmount everything
-                            let _ = umount2(&merged, MntFlags::MNT_DETACH);
+                        // Aggressively unmount everything
+                        let _ = umount2(&merged, MntFlags::MNT_DETACH);
 
-                            // Try to remove the directory
-                            // Retry once after a brief delay if it fails
-                            if fs::remove_dir_all(&path).is_err() {
-                                thread::sleep(Duration::from_millis(50));
-                                if fs::remove_dir_all(&path).is_ok() {
-                                    cleaned += 1;
-                                }
-                            } else {
+                        for extra in &meta.extra_mounts {
+                            let _ = umount2(&extra.target, MntFlags::MNT_DETACH);
+                        }
+
+                        // Try to remove the directory
+                        // Retry once after a brief delay if it fails
+                        if fs::remove_dir_all(&path).is_err() {
+                            thread::sleep(Duration::from_millis(50));
+                            if fs::remove_dir_all(&path).is_ok() {
                                 cleaned += 1;
                             }
+                        } else {
+                            cleaned += 1;
                         }
                     }
                 } else {
