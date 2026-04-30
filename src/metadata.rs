@@ -72,7 +72,7 @@ impl SessionMetadata {
             ));
         }
 
-        let content = lines.join("\n");
+        let content = lines.join("\n") + "\n";
         fs::write(&path, content)
             .map_err(|e| format!("Failed to write metadata to {}: {}", path.display(), e))?;
         Ok(())

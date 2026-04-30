@@ -41,8 +41,8 @@ impl<'a> Session<'a> {
     }
 
     pub fn start_shell(mut self) -> Result<i32, String> {
-        self.write_metadata("shell")?;
         self.setup()?;
+        self.write_metadata("shell")?;
         self.run_command()
     }
 
